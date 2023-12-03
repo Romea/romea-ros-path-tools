@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import sys
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.collections import PatchCollection
+
+from romea_path_tools.path_v2 import Path
+from romea_path_tools.plotter import plot_path
+
+
+def parse_args():
+  parser = argparse.ArgumentParser(
+      prog=os.path.basename(sys.argv[0]),
+      description='Generate annotations in a trajectory file')
+  parser.add_argument('-z', '--zone', type=str, required=True, help='name of the zone')
+  parser.add_argument('-i', '--input', type=str, required=True,
+      help='path of the trajectory file')
+  parser.add_argument('-o', '--output', type=str, required=True,
+      help='path of the output trajectory')
+  return parser.parse_args()
+
+
+class Annotate():
+  def __init__(self, args):
+    self.path = Path.load(args.input)
+    traj_points = self.path.positions()
+
+    self.zone_name = args.zone
+    self.output_filename = args.output
+    self.area_complete = False
+    self.area_points = np.empty((0,2), float)
+    self.handles = {}
+
+    self.fig, self.ax = plt.subplots()
+    self.fig.set_size_inches(12, 8)
+    self.fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
+
+    self.update_view()
+
+
+    # plt.plot(traj_points[:,0], traj_points[:,1], '-')
+    # plot_path(self.path, self.handles)
+    # self.curve_area_points, = plt.plot(
+    #     self.area_points[:,0], self.area_points[:,1], '.-', markersize=10)
+    #
+    # self.fig.set_size_inches(12, 8)
+    # self.ax.axis('equal')
+    # self.ax.grid(True)
+    # self.ax.margins(0.02, 0.02)
+    # self.ax.tick_params(axis="y", direction="in", pad=-22)
+    # self.ax.tick_params(axis="x", direction="in", pad=-15)
+    # self.ax.legend(self.handles.values(), self.handles.keys())
+    # self.fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
+
+    cid = self.fig.canvas.mpl_connect('button_press_event', self.on_click)
+
+
+  def on_click(self, event):
+    if event.button == 1:
+      self.area_points = np.append(self.area_points, ((event.xdata, event.ydata),), axis=0)
+      self.curve_area_points.set_xdata(self.area_points[:,0])
+      self.curve_area_points.set_ydata(self.area_points[:,1])
+      self.fig.canvas.draw()
+
+    elif event.button == 3:
+      area = mpatches.Polygon(self.area_points, True)
+      # self.ax.add_collection(PatchCollection([area], alpha=.2, edgecolor='black'))
+
+      # self.curve_area_points.set_data(((), ()))
+      self.area_points = np.empty((0,2), float)
+
+      # self.fig.canvas.draw()
+      self.build_annotations(area)
+      self.update_view()
+
+
+  def build_annotations(self, polygon: mpatches.Polygon):
+    previously_inside = False
+
+    for index, point in enumerate(self.path.points):
+      is_inside = polygon.contains_point((point[0], point[1]))
+      if is_inside != previously_inside:
+        annotation = {
+          'type': 'zone_enter' if is_inside else 'zone_exit',
+          'point_index': index,
+          'value': self.zone_name,
+        }
+        self.path.annotations.append(annotation)
+
+      previously_inside = is_inside
+
+    self.path.save(self.output_filename)
+
+
+  def update_view(self):
+    self.ax.cla()
+    plot_path(self.path, self.handles)
+    self.curve_area_points, = plt.plot(
+        self.area_points[:,0], self.area_points[:,1], '.-', markersize=10)
+
+    self.ax.legend(self.handles.values(), self.handles.keys())
+
+    self.ax.axis('equal')
+    self.ax.grid(True)
+    self.ax.margins(0.02, 0.02)
+    self.ax.tick_params(axis="y", direction="in", pad=-22)
+    self.ax.tick_params(axis="x", direction="in", pad=-15)
+
+    self.fig.canvas.draw()
+
+
+if __name__ == '__main__':
+  args = parse_args()
+  a = Annotate(args)
+  plt.show()
+

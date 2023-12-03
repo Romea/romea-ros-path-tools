@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import sys
+import matplotlib.pyplot as plt
+from pymap3d import enu
+import numpy as np
+
+from romea_path_tools.path_v2 import Path
+from romea_path_tools.plotter import plot_path
+
+def parse_args():
+  parser = argparse.ArgumentParser(
+      prog=os.path.basename(sys.argv[0]),
+      description='''\
+Plot several paths in the coordinate (anchor) of the first one.
+If the filename ends with '.json', it is considered as a tiara trajectory, else it is 
+considered as a romea trajectory (old version).
+''')
+  parser.add_argument('path', type=str, help='first romea path file')
+  parser.add_argument('paths', type=str, nargs='*', help='other romea path files')
+  args = parser.parse_args()
+  return args
+
+
+def get_anchor_offset(a, b):
+  e, n, u = enu.geodetic2enu(*a, *b)
+  return np.array([e, n])
+
+
+if __name__ == '__main__':
+  args = parse_args()
+  fig, ax = plt.subplots()
+  handles = {}
+
+  print(f"Loading file '{args.path}'")
+  first_path = Path.load(args.path)
+  ref_anchor = first_path.anchor
+  plot_path(first_path, handles)
+
+  for path_name in args.paths:
+    print(f"Loading file '{path_name}'")
+    path = Path.load(path_name)
+    offset = get_anchor_offset(path.anchor, ref_anchor)
+    plot_path(path, handles, offset)
+
+  fig.set_size_inches(12, 8)
+  ax.axis('equal')
+  ax.grid(True)
+  ax.margins(0.02, 0.02)
+  ax.tick_params(axis="y", direction="in", pad=-22)
+  ax.tick_params(axis="x", direction="in", pad=-15)
+  ax.legend(handles.values(), handles.keys())
+  plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
+
+  plt.show()
