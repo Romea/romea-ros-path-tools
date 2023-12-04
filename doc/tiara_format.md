@@ -52,7 +52,7 @@ Here is an example of a TIARA trajectory file:
 
 The corresponding image of the trajectory (obtained with the tool `show`) is:
 
-![]() <img src="doc/data/example_traj.png" width="300"/>
+![](doc/data/example_traj.png)
 
 
 ## Description of the format

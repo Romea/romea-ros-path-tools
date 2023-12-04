@@ -11,7 +11,7 @@ Here is the list of the available tools:
 ## trajectory file format
 
 The file formats used by romea ROS nodes are
-* [TIARA trajectory format](doc/tiara_format) (extension: `.traj`)
+* [TIARA trajectory format](doc/tiara_format.md) (extension: `.traj`)
 * ROMEA trajectory format (deprecated) (extension: `.txt`)
 
 
