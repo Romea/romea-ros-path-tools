@@ -135,7 +135,7 @@ from romea_path_tools.path import Path
 def main():
     path = Path()
     path.name = 'test'
-    path.columns = ['x', 'y', 'speed']  # 'x' and 'y' are required
+    path.columns = ['x', 'y', 'speed']  # 'x' and 'y' are required (these are the default)
     path.anchor = (45.76277, 3.110397, 403.6)  # INRAE, Aubière, France
 
     path.append_point([12.5, 3.2, 1.0])
@@ -152,4 +152,4 @@ if __name__ == '__main__':
 
 This script requires than the workspace environment is loaded (the `PYTHONPATH` environment variable
 must be correctly filled).
-It can be, for example, put in a ROS2 package that include `romea_path_tools` as dependency.
+It can be, for example, put in a ROS2 package that includes `romea_path_tools` as dependency.
