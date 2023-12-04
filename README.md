@@ -8,14 +8,14 @@ Here is the list of the available tools:
   `kml`, `wgs84_csv`, `geojson`
 * **`show`**: show one or several trajectories on a basic GUI (matplotlib)
 
-## trajectory file format
+## Trajectory file format
 
 The file formats used by romea ROS nodes are
 * [TIARA trajectory format](doc/tiara_format.md) (extension: `.traj`)
 * ROMEA trajectory format (deprecated) (extension: `.txt`)
 
 
-## desccription of applications
+## Desccription of applications
 
 ### show
 
@@ -122,3 +122,34 @@ optional arguments:
                         extension is used.
   -f, --force           override existing output file
 ```
+
+## Create a python script to generate a trajectory
+
+If you want to generate a trajectory from a python script, you can use the python class `Path` that
+provide some functions to add points and save the trajectory to a file.
+Here is a complete python script that create a short trajectory at INRAE (Aubière):
+
+```python
+from romea_path_tools.path import Path
+
+def main():
+    path = Path()
+    path.name = 'test'
+    path.columns = ['x', 'y', 'speed']  # 'x' and 'y' are required
+    path.anchor = (45.76277, 3.110397, 403.6)  # INRAE, Aubière, France
+
+    path.append_point([12.5, 3.2, 1.0])
+    path.append_point([12.6, 3.2, 1.0])
+    path.append_point([12.7, 3.3, 1.0])
+    path.append_point([12.75, 3.43, 1.0])
+
+    path.save('/tmp/test.traj')
+
+
+if __name__ == '__main__':
+    main()
+```
+
+This script requires than the workspace environment is loaded (the `PYTHONPATH` environment variable
+must be correctly filled).
+It can be, for example, put in a ROS2 package that include `romea_path_tools` as dependency.
