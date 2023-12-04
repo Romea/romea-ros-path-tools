@@ -6,7 +6,7 @@ from pymap3d import enu
 import geojson as gj
 
 from .romea_path import RomeaPath
-from .kml import Kml
+from . import kml
 
 
 class ParseError(RuntimeError):
@@ -24,15 +24,24 @@ class Path:
         self.name = None
 
     @staticmethod
-    def load(traj_filename):
-        """ Build a path from a file. It handle '.txt' and '.traj' format """
-        if traj_filename.endswith('.txt') or traj_filename.endswith('.csv'):
-            return Path.from_old_version(traj_filename)
+    def load(filename):
+        """ Read the file extension and build a path from the correct format """
+        if filename.endswith('.txt'):
+            return Path.from_romea(filename)
+        elif filename.endswith('.traj'):
+            return Path.from_tiara(filename)
+        elif filename.endswith('.kml'):
+            return Path.from_kml(filename)
+        else:
+            raise RuntimeError(f"unsupported file format for input file '{filename}'")
 
+
+    @staticmethod
+    def from_tiara(filename):
         path = Path()
-        path.name = os.path.basename(traj_filename)
+        path.name = os.path.basename(filename)
 
-        with open(traj_filename, 'r') as f:
+        with open(filename, 'r') as f:
             data = json.load(f)
 
         origin = data['origin']
@@ -57,7 +66,7 @@ class Path:
         return path
 
     @staticmethod
-    def from_old_version(filename):
+    def from_romea(filename):
         """ Build a path from a file in the old romea format ('.txt') """
         old_path = RomeaPath.load(filename)
         path = Path()
@@ -74,6 +83,20 @@ class Path:
             path.sections.append(section)
 
         return path
+
+    @staticmethod
+    def from_kml(filename):
+        """ Build a path from a KML file that contains a linestring ('.txt') """
+        linestring = kml.parse_polygon(filename)
+        path = Path()
+        path.name = os.path.basename(filename)
+        orig = linestring.origin
+        path.anchor = (orig[1], orig[0], orig[2])
+        for point in linestring.points:
+            path.append_point(list(point))
+
+        return path
+
 
     def positions(self):
         """ return an numpy array of (x, y) for each point """
@@ -142,7 +165,7 @@ class Path:
 
     def save_kml(self, filename):
         """ Save the path in KML format. """
-        kml = Kml()
+        kml_data = kml.Kml()
         x_index = self.columns.index('x')
         y_index = self.columns.index('y')
 
@@ -150,7 +173,7 @@ class Path:
             lat, lon, alt = enu.enu2geodetic(p[x_index], p[y_index], 0, *self.anchor)
             kml.add_point(lon, lat, alt)
 
-        kml.save(filename)
+        kml_data.save(filename)
 
     def save_geojson(self, filename):
         """ Save the path in GeoJSON format. """

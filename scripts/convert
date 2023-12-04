@@ -22,7 +22,7 @@ def parse_args():
           '.wgs84.csv' (for CSV points in WGS84 coordinates),
           '.kml' (for the KML standard format),
           '.geojson' (for the GeoJSON standard format).
-        For input files, only '.txt' and '.traj' are accepted.
+        For input files, only '.txt', '.traj' and '.kml' are accepted.
       '''
   )
   parser.add_argument(
