@@ -1,126 +1,221 @@
-from dataclasses import dataclass, astuple
-from pymap3d import enu
+import operator
+import os
+import json
 import numpy as np
+from pymap3d import enu
+import geojson as gj
 
-# local
+from .romea_path import RomeaPath
 from .kml import Kml
 
-@dataclass
-class Point:
-  x: float
-  y: float
-  speed: float
-  marker_count: int
-  nb_cols: int
 
-  def __repr__(self):
-    return f'{self.x:.3f} {self.y:.3f} {self.speed:.3f} {self.marker_count}'
-
-  @staticmethod
-  def from_str(s):
-    v = s.split(' ')
-    if len(v) == 2:
-      return Point(float(v[0]), float(v[1]), 0, 0, 4)
-    elif len(v) == 3:
-      return Point(float(v[0]), float(v[1]), float(v[2]), 0, 4)
-    else:
-      return Point(float(v[0]), float(v[1]), float(v[2]), int(v[3]), 4)
+class ParseError(RuntimeError):
+    pass
 
 
 class Path:
-  def __init__(self):
-    self.sections = []
-    self.anchor = (0, 0, 0)
-    self.markers = []
 
+    def __init__(self):
+        self.anchor = (0, 0, 0)
+        self.columns = ['x', 'y']
+        self.points = []
+        self.sections = []
+        self.annotations = []
+        self.name = None
 
-  @staticmethod
-  def load(traj_filename):
-    path = Path()
+    @staticmethod
+    def load(traj_filename):
+        """ Build a path from a file. It handle '.txt' and '.traj' format """
+        if traj_filename.endswith('.txt') or traj_filename.endswith('.csv'):
+            return Path.from_old_version(traj_filename)
 
-    with open(traj_filename, 'r') as f:
-      f.readline()
+        path = Path()
+        path.name = os.path.basename(traj_filename)
 
-      line = f.readline()
-      path.anchor = list(map(float, line.split(' ')))
+        with open(traj_filename, 'r') as f:
+            data = json.load(f)
 
-      nb_sections = int(f.readline())
-      prev_marker_count = 0
+        origin = data['origin']
+        if origin['type'] != 'WGS84':
+            raise ParseError(f"unknown origin type '{origin['type']}'; only 'WGS84' is accepted")
+        path.anchor = origin['coordinates']
 
-      for section_index in range(nb_sections):
-        points = []
-        nb_lines = int(f.readline().split(' ')[0])
+        if 'points' not in data:
+            raise ParseError("the element 'points' is required in a trajectory file")
+        else:
+            path.columns = data['points']['columns']
+            path.points = data['points']['values']
 
-        for line_index in range(nb_lines):
-          point = Point.from_str(f.readline())
-          points.append(point)
+        if 'annotations' in data:
+            path.annotations = data['annotations']
 
-          if point.nb_cols >= 4:
-            marker_count = int(point.marker_count)
-            if marker_count != prev_marker_count:
-              path.markers.append(points[-1])
-            prev_marker_count = marker_count 
+        if 'sections' not in data:
+            path.sections = path.points
+        else:
+            path.create_sections(data['sections'])
 
-        path.sections.append(points)
+        return path
 
-    return path
+    @staticmethod
+    def from_old_version(filename):
+        """ Build a path from a file in the old romea format ('.txt') """
+        old_path = RomeaPath.load(filename)
+        path = Path()
+        path.name = os.path.basename(filename)
+        path.columns = ['x', 'y', 'speed']
+        path.anchor = old_path.anchor
 
+        for old_section in old_path.sections:
+            section = []
+            for old_point in old_section:
+                point = [old_point.x, old_point.y, old_point.speed]
+                path.points.append(point)
+                section.append(point)
+            path.sections.append(section)
 
-  def save(self, filename):
-    with open(filename, 'w') as f:
-      f.write('WGS84\n')
-      f.write(f'{self.anchor[0]} {self.anchor[1]} {self.anchor[2]}\n')
-      f.write(f'{len(self.sections)}\n')
+        return path
 
-      for points in self.sections:
-        if len(points):
-          f.write(f'{len(points)} {points[0].nb_cols}\n')
+    def positions(self):
+        """ return an numpy array of (x, y) for each point """
+        pts = np.array(self.points)
+        x_index = self.columns.index('x')
+        y_index = self.columns.index('y')
+        return pts[:, [x_index, y_index]]
 
-          for point in points:
-            f.write(f'{point}\n')
+    def section_indexes(self):
+        """ Return the list of point indexes that correspond to the begining of a new section """
+        indexes = []
+        index = 0
+        for section in self.sections:
+            indexes.append(index)
+            index += len(section)
+        return indexes
 
+    def create_sections(self, indexes):
+        """ Fill the 'sections' attribute with the points of the path according 
+        to the section indexes.
+        """
+        if indexes and indexes[-1] != len(self.points):
+            indexes = indexes + [len(self.points)]
 
-  def save_csv(self, filename):
-    with open(filename, 'w') as f:
-      f.write(f'x,y,speed,marker_count\n')
+        for begin, end in zip(indexes[:-1], indexes[1:]):
+            self.sections.append(self.points[begin:end])
 
-      for points in self.sections:
-        for p in points:
-          f.write(f'{p.x},{p.y},{p.speed},{p.marker_count}\n')
+    def save(self, filename):
+        """ Save the in the JSON format used by romea_path """
+        data = {
+            'version': '2',
+            'origin': {
+                'type': 'WGS84',
+                'coordinates': self.anchor,
+            },
+            'points': {
+                'columns': self.columns,
+                'values': self.points,
+            },
+            'sections': self.section_indexes(),
+            'annotations': self.annotations,
+        }
 
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=2)
 
-  def save_wgs84_csv(self, filename):
-    with open(filename, 'w') as f:
-      f.write(f'latitude,longitude,altitude\n')
+    def save_csv(self, filename):
+        """ Save the path in CSV format. The point are expressed in 'x' and 'y' coordinates """
+        with open(filename, 'w') as f:
+            f.write(','.join(self.columns) + '\n')
 
-      for points in self.sections:
-        for p in points:
-          lat, lon, alt = enu.enu2geodetic(p.x, p.y, 0, *self.anchor)
-          f.write(f'{lat},{lon},{alt}\n')
+            for point in self.points:
+                f.write(','.join(map(str, point)) + '\n')
 
+    def save_wgs84_csv(self, filename):
+        """ Save the path in CSV format. The point are expressed in WGS84 coordinates """
+        with open(filename, 'w') as f:
+            f.write(f'latitude,longitude,altitude\n')
 
-  def save_kml(self, filename):
-    kml = Kml()
-    for points in self.sections:
-      for p in points:
-        lat, lon, alt = enu.enu2geodetic(p.x, p.y, 0, *self.anchor)
-        kml.add_point(lon, lat, alt)
+            x_index = self.columns.index('x')
+            y_index = self.columns.index('y')
 
-    kml.save(filename)
+            for p in self.points:
+                lat, lon, alt = enu.enu2geodetic(p[x_index], p[y_index], 0, *self.anchor)
+                f.write(f'{lat},{lon},{alt}\n')
 
+    def save_kml(self, filename):
+        """ Save the path in KML format. """
+        kml = Kml()
+        x_index = self.columns.index('x')
+        y_index = self.columns.index('y')
 
-  def array(self):
-    points = []
-    for section in self.sections:
-      for p in section:
-        points.append(astuple(p)[:-1])
-    return np.array(points)
+        for p in self.points:
+            lat, lon, alt = enu.enu2geodetic(p[x_index], p[y_index], 0, *self.anchor)
+            kml.add_point(lon, lat, alt)
 
+        kml.save(filename)
 
-  def wgs84_array(self):
-    points = []
-    for section in self.sections:
-      for p in section:
-        lat, lon, alt = enu.enu2geodetic(p.x, p.y, 0, *self.anchor)
-        points.append((lat, lon, alt))
-    return points
+    def save_geojson(self, filename):
+        """ Save the path in GeoJSON format. """
+        x_index = self.columns.index('x')
+        y_index = self.columns.index('y')
+
+        origin_point = [self.anchor[1], self.anchor[0], self.anchor[2]]
+        origin = gj.Feature(id='origin', geometry=gj.Point(origin_point, precision=8))
+
+        wgs84_sections = []
+        for section in self.sections:
+            wgs84_section = []
+            for p in section:
+                lat, lon, alt = enu.enu2geodetic(p[x_index], p[y_index], 0, *self.anchor)
+                wgs84_section.append([lon, lat, alt])
+
+            wgs84_sections.append(wgs84_section)
+
+        extra = self.extra_columns()
+        section_linestrings = gj.MultiLineString(wgs84_sections, precision=8)
+        traj = gj.Feature(id='sections', geometry=section_linestrings, extra=extra)
+        traj.update(annotations=self.annotations)
+
+        features = gj.FeatureCollection([origin, traj])
+        with open(filename, 'w') as f:
+            gj.dump(features, f, indent=2)
+
+    def extra_columns(self):
+        """ Return a dictionnary containing the columns that are not 'x' or 'y' and its values """
+        indexes = []
+        for i, key in enumerate(self.columns):
+            if key not in ['x', 'y']:
+                indexes.append(i)
+
+        columns_select = operator.itemgetter(*indexes)
+        columns = columns_select(self.columns)
+        sections = []
+        for section in self.sections:
+            sections.append(list(map(columns_select, section)))
+
+        return {'columns': columns, 'values': sections}
+
+    def empty(self):
+        """ Return True if there is no points """
+        return len(self.points) == 0
+
+    def append_section(self, section):
+        """ Add a section at the end of the path 
+        The points in this new section must respect the format of 'columns'
+        """
+        self.sections.append(section)
+        self.points += section
+
+    def append_point(self, point):
+        """ Add a point at the end of the last section of the path 
+        The point must respect the format of 'columns'
+        """
+        self.points.append(point)
+        if not self.sections:
+            self.sections.append([])
+        self.sections[-1].append(point)
+
+    def append_annotation(self, type, value, point_index):
+        self.annotations.append({
+            'type': type,
+            'value': value,
+            'point_index': point_index,
+        })

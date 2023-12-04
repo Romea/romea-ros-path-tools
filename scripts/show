@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from pymap3d import enu
 import numpy as np
 
-from romea_path_tools.path_v2 import Path
+from romea_path_tools.path import Path
 from romea_path_tools.plotter import plot_path
 
 def parse_args():

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.collections import PatchCollection
 
-from romea_path_tools.path_v2 import Path
+from romea_path_tools.path import Path
 from romea_path_tools.plotter import plot_path
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .path_v2 import Path
+from .path import Path
 
 
 def plot_path(path: Path, handles: dict = {}, offset: np.ndarray = (0, 0)):
