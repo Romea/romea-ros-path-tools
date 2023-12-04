@@ -36,6 +36,8 @@ class Path:
             return Path.from_wgs84_csv(filename)
         elif filename.endswith('.csv'):
             return Path.from_csv(filename)
+        elif filename.endswith('.geojson'):
+            return Path.from_geojson(filename)
         else:
             raise RuntimeError(f"unsupported file format for input file '{filename}'")
 
@@ -89,7 +91,7 @@ class Path:
 
     @staticmethod
     def from_kml(filename):
-        """ Build a path from a KML file that contains a linestring ('.txt') """
+        """ Build a path from a KML file that contains a linestring ('.kml') """
         linestring = kml.parse_polygon(filename)
         path = Path()
         path.name = os.path.basename(filename)
@@ -140,6 +142,34 @@ class Path:
             path.append_point(point)
 
         return path
+
+    @staticmethod
+    def from_geojson(filename):
+        """ Build a path from a GeoJSON file that contains a Point (anchor)
+        and a MultiLineString (traj) ('.geojson').
+        Currently, extra columns and annotations are not supported
+        """
+        path = Path()
+        path.name = os.path.basename(filename)
+
+        with open(filename, 'r') as f:
+            data = json.load(f)
+
+        for feature in data['features']:
+            if feature['id'] == 'origin':
+                coords = feature['geometry']['coordinates']
+                path.anchor = (coords[1], coords[0], coords[1])
+
+            elif feature['id'] == 'sections':
+                coords = feature['geometry']['coordinates']
+                for section in coords:
+                    path.append_section([])
+                    for geo_pt in section:
+                        point = enu.geodetic2enu(geo_pt[1], geo_pt[0], geo_pt[2], *path.anchor)
+                        path.append_point([point[0], point[1]])
+
+        return path
+
 
     def positions(self):
         """ return an numpy array of (x, y) for each point """
