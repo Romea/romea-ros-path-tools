@@ -34,9 +34,10 @@ class Path:
             return Path.from_kml(filename)
         elif filename.endswith('.wgs84.csv'):
             return Path.from_wgs84_csv(filename)
+        elif filename.endswith('.csv'):
+            return Path.from_csv(filename)
         else:
             raise RuntimeError(f"unsupported file format for input file '{filename}'")
-
 
     @staticmethod
     def from_tiara(filename):
@@ -95,7 +96,7 @@ class Path:
         orig = linestring.origin
         path.anchor = (orig[1], orig[0], orig[2])
         for point in linestring.points:
-            path.append_point(list(point))
+            path.append_point([point[0], point[1]])
 
         return path
 
@@ -119,9 +120,26 @@ class Path:
             geo_coords = tuple(map(float, line.split(',')))
             point = enu.geodetic2enu(*geo_coords, *path.anchor)
             path.append_point([point[0], point[1]])
-            
+
         return path
 
+    @staticmethod
+    def from_csv(filename):
+        """ Build a path from a CSV file containing 'x', 'y' and other columns
+        ('.wgs84.csv'). The column separator must be ','.
+        """
+        file = open(filename, 'r')
+        path = Path()
+        path.name = os.path.basename(filename)
+
+        # read headers
+        path.columns = file.readline().split(',')
+
+        for line in file.readlines():
+            point = list(map(float, line.split(',')))
+            path.append_point(point)
+
+        return path
 
     def positions(self):
         """ return an numpy array of (x, y) for each point """
