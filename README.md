@@ -26,6 +26,7 @@ You can use it as follows (considering that the file `a.traj` exists locally):
 ros2 run romea_path_tools show a.traj
 ```
 And here is an example of what the program will show:
+
 <img src="doc/data/demo_show.png" width="400"/>
 
 You can obtain the documentation of the program using `-h` option:
@@ -61,6 +62,7 @@ ros2 run romea_path_tools annotate -i demo.traj -o test.traj -z uturn
 ```
 
 Here is an overview of how it works:
+
 ![](doc/data/demo_annotate.mp4)
 
 You can obtain the documentation of the program using `-h` option:
