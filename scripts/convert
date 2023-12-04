@@ -17,7 +17,7 @@ def parse_args():
         Is is possible to export the trajectory to a new format by using the -t option 
         or by specifying the correct file extension. The known extensions are 
           '.txt' (for old romea format for trajectories),
-          '.traj' (for the new tiara format for trajectories),
+          '.traj' (for the tiara format for trajectories),
           '.csv' (for CSV points in east-north-up coordinates),
           '.wgs84.csv' (for CSV points in WGS84 coordinates),
           '.kml' (for the KML standard format),
