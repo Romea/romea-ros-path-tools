@@ -147,7 +147,7 @@ class Path:
     def from_geojson(filename):
         """ Build a path from a GeoJSON file that contains a Point (anchor)
         and a MultiLineString (traj) ('.geojson').
-        Currently, extra columns and annotations are not supported
+        Currently, extra columns are not supported
         """
         path = Path()
         path.name = os.path.basename(filename)
@@ -167,6 +167,8 @@ class Path:
                     for geo_pt in section:
                         point = enu.geodetic2enu(geo_pt[1], geo_pt[0], geo_pt[2], *path.anchor)
                         path.append_point([point[0], point[1]])
+
+                path.annotations = feature['annotations']
 
         return path
 
