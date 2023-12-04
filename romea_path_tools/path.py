@@ -32,6 +32,8 @@ class Path:
             return Path.from_tiara(filename)
         elif filename.endswith('.kml'):
             return Path.from_kml(filename)
+        elif filename.endswith('.wgs84.csv'):
+            return Path.from_wgs84_csv(filename)
         else:
             raise RuntimeError(f"unsupported file format for input file '{filename}'")
 
@@ -95,6 +97,29 @@ class Path:
         for point in linestring.points:
             path.append_point(list(point))
 
+        return path
+
+    @staticmethod
+    def from_wgs84_csv(filename):
+        """ Build a path from a CSV file containing latitude, longitude and altitude
+        ('.wgs84.csv'). The column separator must be ','.
+        """
+        file = open(filename, 'r')
+        path = Path()
+        path.name = os.path.basename(filename)
+
+        # read headers
+        file.readline()
+
+        # read first line to get the anchor
+        path.anchor = tuple(map(float, file.readline().split(',')))
+        path.append_point([0, 0, 0])
+
+        for line in file.readlines():
+            geo_coords = tuple(map(float, line.split(',')))
+            point = enu.geodetic2enu(*geo_coords, *path.anchor)
+            path.append_point([point[0], point[1]])
+            
         return path
 
 
