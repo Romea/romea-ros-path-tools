@@ -14,6 +14,7 @@ install(PROGRAMS
   scripts/annotate
   scripts/convert
   scripts/show
+  scripts/record
   DESTINATION lib/${PROJECT_NAME}
 )
 
