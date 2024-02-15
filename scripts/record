@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Point
+from nav_msgs.msg import Odometry
+
+from romea_path_tools.path import Path
+
+
+class Recorder:
+
+    def __init__(self):
+        self.node = Node('recorder')
+        self.node.declare_parameter('output', 'recorded.traj')
+        self.node.declare_parameter('minimal_distance_between_two_points', 0.2)
+        self.node.declare_parameter('minimal_vehicle_speed_to_insert_point', 0.1)
+        self.node.declare_parameter('anchor', [0., 0., 0.])
+
+        self.filename = self.node.get_parameter('output')
+        min_dist = self.node.get_parameter('minimal_distance_between_two_points')
+        self.min_speed = self.node.get_parameter('minimal_vehicle_speed_to_insert_point')
+        anchor = self.node.get_parameter('anchor')
+
+        min_dist = min_dist.get_parameter_value().double_value
+        self.min_speed = self.min_speed.get_parameter_value().double_value
+        self.filename = self.filename.get_parameter_value().string_value
+        anchor = anchor.get_parameter_value().double_array_value
+
+        self.node.get_logger().info(f"output filename: {self.filename}")
+        self.node.get_logger().info(f"anchor: {anchor}")
+
+        self.odom_sub = self.node.create_subscription(Odometry, 'odom', self.odom_callback, 5)
+
+        self.path = Path()
+        self.path.anchor = tuple(anchor)
+        self.path.columns = ['x', 'y', 'speed']
+
+        self.previous_pos = Point()
+        self.previous_speed = 0.
+        self.min_dist_squared = min_dist * min_dist
+
+    def odom_callback(self, msg: Odometry):
+        pos = msg.pose.pose.position
+        speed = msg.twist.twist.linear.x
+
+        if self.check_dist(pos) and abs(speed) >= self.min_speed:
+            # when the sign of the speed change, create a new section
+            if (speed >= 0) != (self.previous_speed >= 0):
+                self.path.append_section([])
+
+            self.path.append_point([round(pos.x, 3), round(pos.y, 3), round(speed, 3)])
+            self.previous_pos = pos
+            self.previous_speed = speed
+
+    def check_dist(self, pos: Point):
+        diff_x = pos.x - self.previous_pos.x
+        diff_y = pos.y - self.previous_pos.y
+        squared_dist = diff_x * diff_x + diff_y * diff_y
+        return squared_dist >= self.min_dist_squared
+
+    def save(self):
+        self.path.save(self.filename)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    recorder = Recorder()
+
+    try:
+        rclpy.spin(recorder.node)
+    except KeyboardInterrupt:
+        pass
+
+    print('node interrupted, saving trajectory...')
+    recorder.save()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
