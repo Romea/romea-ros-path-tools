@@ -4,6 +4,8 @@ import json
 import numpy as np
 from pymap3d import enu
 import geojson as gj
+import scipy.io
+from scipy.io import savemat
 
 from .romea_path import RomeaPath
 from . import kml
@@ -38,6 +40,8 @@ class Path:
             return Path.from_csv(filename)
         elif filename.endswith('.geojson'):
             return Path.from_geojson(filename)
+        elif filename.endswith('.mat'):
+            return Path.from_mat(filename)
         else:
             raise RuntimeError(f"unsupported file format for input file '{filename}'")
 
@@ -172,6 +176,41 @@ class Path:
 
         return path
 
+    @staticmethod
+    def from_mat(filename):
+        """ Build a path from a mat file containing 'idx', 'x', 'y' and other columns.
+        """
+        data = scipy.io.loadmat(filename)
+        path = Path()
+        path.name = os.path.basename(filename)
+        if 'TrajMere' not in data:
+            raise ParseError("the element ''TrajMere'' is required in a trajectory file")
+        else:
+            #read TrajMere
+            TrajMere = list(data['TrajMere'][:])
+            for point in TrajMere:
+                path.append_point(list(point[1:]))
+        if 'columns' not in data:
+            path.columns = ['x','y']
+        else:
+            path.columns = [col.rstrip() for col in data['columns'][:]]
+        if 'origin_type' not in data:
+            print(" No origin type in the file\n")
+        elif 'WGS84' not in [col.rstrip() for col in data['origin_type'][:]]:
+            raise ParseError(f"unknown origin type '{data['origin_type']}'; only 'WGS84' is accepted")
+        if 'origin_coordinates' not in data:
+            print("No origin cordinates in the file/n")
+        else:
+            path.anchor = list(data['origin_coordinates'][0])
+        if 'annotations' not in data:
+            print("No annotations in the file/n")
+        else:
+            path.annotations = list(data['annotations'][:])
+        if 'sections' not in data:
+            print("No sections in the file/n")
+        else:
+            path.sections = list(data['sections'][:])
+        return path
 
     def positions(self):
         """ return an numpy array of (x, y) for each point """
@@ -275,6 +314,19 @@ class Path:
         features = gj.FeatureCollection([origin, traj])
         with open(filename, 'w') as f:
             gj.dump(features, f, indent=2)
+
+    def save_mat(self, filename):
+        """ Save the path in mat format. The point are expressed in 'x' and 'y' coordinates """
+        tableau_points = np.array(self.points)
+        num_lignes = np.arange(1, tableau_points.shape[0] + 1).reshape(-1, 1)
+        tableau_points = np.hstack((num_lignes, tableau_points))
+        data = {'TrajMere': tableau_points, 
+                'columns':self.columns, 
+                'origin_type':['WGS84'], 
+                'origin_coordinates':list(self.anchor), 
+                'annotations':self.annotations, 
+                'sections': self.section_indexes()}
+        savemat(filename, data)
 
     def extra_columns(self):
         """ Return a dictionnary containing the columns that are not 'x' or 'y' and its values """

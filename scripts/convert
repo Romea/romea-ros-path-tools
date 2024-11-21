@@ -40,7 +40,7 @@ def parse_args():
   )
   parser.add_argument(
       '-t', '--type', type=str, default=None, metavar="type",
-      choices=['romea_v1', 'tiara', 'csv', 'kml', 'wgs84_csv', 'geojson'],
+      choices=['romea_v1', 'tiara', 'csv', 'kml', 'wgs84_csv', 'geojson', 'mat'],
       help='''\
         file format of the generated path 
         [romea_v1, tiara, csv, kml, wgs84_csv, geojson].
@@ -126,6 +126,8 @@ if __name__ == "__main__":
       new_path.save_geojson(args.path_out)
     elif args.type == 'romea_v1':
       print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
+    elif args.type == 'mat':
+      new_path.save_mat(args.path_out)
     else:
       new_path.save(args.path_out)
   else:
@@ -141,5 +143,7 @@ if __name__ == "__main__":
       print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
     elif args.path_out.endswith('.traj'):
       new_path.save(args.path_out)
+    elif args.path_out.endswith('.mat'):
+      new_path.save_mat(args.path_out)
     else:
       print(f"[error] unknown file extension for '{args.path_out}'", file=sys.stderr)
