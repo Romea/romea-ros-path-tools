@@ -11,6 +11,10 @@
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>rclpy</depend>
+  <depend>python3-pymap3d</depend>
+  <depend>python3-geojson</depend>
+  <depend>python3-numpy</depend>
+  <depend>python3-matplotlib</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
