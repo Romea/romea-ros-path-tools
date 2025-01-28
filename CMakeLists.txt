@@ -15,6 +15,7 @@ install(PROGRAMS
   scripts/convert
   scripts/show
   scripts/record
+  scripts/path_from_swaths
   DESTINATION lib/${PROJECT_NAME}
 )
 
