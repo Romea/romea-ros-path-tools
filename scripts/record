@@ -51,6 +51,7 @@ class Recorder:
             self.path.append_point([round(pos.x, 3), round(pos.y, 3), round(speed, 3)])
             self.previous_pos = pos
             self.previous_speed = speed
+            self.node.get_logger().info(f"point: {self.path.points[-1]}")
 
     def check_dist(self, pos: Point):
         diff_x = pos.x - self.previous_pos.x
