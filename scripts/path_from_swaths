@@ -59,9 +59,9 @@ class PathGenerator:
         self.path = path_planner.planPath(self.robot, self.swaths, turning)
 
         # fix: Add missing last point manually
-        # last_state = f2c.PathState()
-        # last_state.point = self.swaths.back().endPoint()
-        # self.path.addState(last_state)
+        last_state = f2c.PathState()
+        last_state.point = self.swaths.back().endPoint()
+        self.path.addState(last_state)
 
         self.path = discretize_swaths(self.path, self.step_size + .01)
 
