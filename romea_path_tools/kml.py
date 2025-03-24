@@ -72,13 +72,20 @@ class GeoPolygon:
     def _add_converted_point(self, geo_point):
         ''' convert WGS84 point and add it to points '''
         lon0, lat0, alt0 = tuple(self.origin)
-        lon, lat, alt = tuple(geo_point)
+        if len(geo_point) == 2:
+            lon, lat = tuple(geo_point)
+            alt = 0.
+        else:
+            lon, lat, alt = tuple(geo_point)
         point = enu.geodetic2enu(lat, lon, alt, lat0, lon0, alt0)
         self.points.append(point)
 
     def set_origin(self, origin):
         ''' set WGS84 origin point (correspond to [0, 0, 0] in ENU) '''
-        self.origin = origin
+        if len(origin) == 2:
+            self.origin = (*origin, 0.)
+        else:
+            self.origin = origin
         self.points.clear()
 
         for geo_point in self.geo_points:

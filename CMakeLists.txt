@@ -16,6 +16,7 @@ install(PROGRAMS
   scripts/show
   scripts/record
   scripts/path_from_swaths
+  scripts/planner
   DESTINATION lib/${PROJECT_NAME}
 )
 
