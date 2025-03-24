@@ -1,0 +1,7 @@
+services:
+  planner:
+    build:
+      context: ./
+      args:
+        - FROM_IMAGE=tirrex_workspace:${USER}
+    image: tirrex_workspace:${USER}_f2c
