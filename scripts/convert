@@ -22,7 +22,8 @@ def parse_args():
           '.wgs84.csv' (for CSV points in WGS84 coordinates),
           '.kml' (for the KML standard format),
           '.geojson' (for the GeoJSON standard format).
-      '''
+      ''',
+      allow_abbrev=True,
   )
   parser.add_argument(
       '-a', '--anchor', type=float, nargs=3, default=None,

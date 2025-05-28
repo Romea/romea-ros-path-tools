@@ -43,7 +43,7 @@ class PathGenerator:
         swaths = bf.generateSwaths(angle, self.robot.getCovWidth(), self.cell)
 
         # self.swaths = f2c.RP_Snake().genSortedSwaths(swaths)
-        self.swaths = f2c.RP_Boustrophedon().genSortedSwaths(swaths, 2)
+        self.swaths = f2c.RP_Boustrophedon().genSortedSwaths(swaths, 0)
         # self.swaths = f2c.RP_Spiral().genSortedSwaths(swaths)
 
     def path_planning(self):
