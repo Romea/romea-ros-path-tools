@@ -7,6 +7,7 @@ Here is the list of the available tools:
 * **`convert`**: convert a trajectory file in one the following format : `romea_v1`, `tiara`, `csv`,
   `kml`, `wgs84_csv`, `geojson`
 * **`show`**: show one or several trajectories on a basic GUI (matplotlib)
+* **`planner`**: (requires Fields2Cover) generate a trajectory that cover an agricultural field.
 
 ## Trajectory file format
 
@@ -122,6 +123,34 @@ optional arguments:
                         extension is used.
   -f, --force           override existing output file
 ```
+
+### planner
+
+This programs allows to generate a `.traj` file that cover an agricultural field.
+This programs requires to compile
+[Fields2Cover](https://fields2cover.github.io/source/installation.html#compilation-with-python-interface)
+with the python API.
+A Dockerfile is provided to compile it over the tirrex docker image.
+You can build it using (from the root of this project):
+```bash
+docker compose build
+```
+
+This will create a new docker image `tirrex_workspace:${USER}_f2c` that you can use instead of the
+default one in the `bash` service of the tirex workspace.
+
+You can obtain the documentation of the program using `-h` option:
+```
+Usage: planner [OPTIONS] KML_FILENAME
+
+Options:
+  -w, --operation-width FLOAT
+  -r, --min-radius FLOAT
+  -o, --output PATH
+  --robot-width FLOAT
+  --help                       Show this message and exit.
+```
+
 
 ## Create a python script to generate a trajectory
 
