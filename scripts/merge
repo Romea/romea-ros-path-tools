@@ -16,7 +16,6 @@ def merge_two_paths(path1: Path, path2: Path):
         print(
             f"Warning : distance between end of {path1.name} and start of {path2.name} > 0.1 meter"
         )
-        print(math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p2[1]) ** 2))
 
     merged_path = Path()
     merged_path.columns = path1.columns
