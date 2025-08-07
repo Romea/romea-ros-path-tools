@@ -18,14 +18,7 @@ class PathGenerator:
         self.robot.setMaxDiffCurv(0.4)  # 1/m²
         self.step_size = 0.1  # m
 
-    def create_swaths_from_csv(self, filename):
-        points = []
-        with open(filename, "r") as file:
-            file.readline()
-            for line in file.readlines():
-                values = tuple(map(float, line.split(",")))
-                points.append(values)
-
+    def create_swaths_from_points(self, points):
         self.swaths = f2c.Swaths()
         for a, b in zip(points[::2], points[1::2]):
             line_string = f2c.LineString(
@@ -36,6 +29,15 @@ class PathGenerator:
             self.swaths.emplace_back(swath)
 
         self.origin = (0, 0, 0)
+
+    def create_swaths_from_csv(self, filename):
+        points = []
+        with open(filename, "r") as file:
+            file.readline()
+            for line in file.readlines():
+                values = tuple(map(float, line.split(",")))
+                points.append(values)
+        self.create_swaths_from_points(points)
 
     def create_swaths_from_geojson(self, filename):
         with open(filename, "r") as file:
@@ -54,15 +56,7 @@ class PathGenerator:
 
                     x, y, _ = pm.geodetic2enu(lat, lon, 0, self.origin[1], self.origin[0], 0)
                     points.append((x, y))
-
-        self.swaths = f2c.Swaths()
-        for a, b in zip(points[::2], points[1::2]):
-            line_string = f2c.LineString(
-                f2c.Point(*a),
-                f2c.Point(*b),
-            )
-            swath = f2c.Swath(line_string)
-            self.swaths.emplace_back(swath)
+        self.create_swaths_from_points(points)
 
     def path_planning(self):
         path_planner = f2c.PP_PathPlanning()
