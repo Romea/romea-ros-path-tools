@@ -1,13 +1,29 @@
 #!/usr/bin/env python3
+import argparse
+import os
 import sys
 from romea_path_tools.path import Path
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog=os.path.basename(sys.argv[0]),
+        description="Merge multiple trajectory files. \
+                End of trajectory n will be attached to start of trajectory n+1",
+    )
+    parser.add_argument("traj_file_1", type=str, help="first trajectory")
+    parser.add_argument("traj_file_n", nargs="+", type=str, help="trajectories to merge")
+    parser.add_argument(
+        "-o", "--output", type=str, required=True, help="path of the output trajectory"
+    )
+    return parser.parse_args()
 
 
 def merge_two_paths(path1: Path, path2: Path):
     if path1.anchor != path2.anchor:
         raise RuntimeError(f"{path1.name} and {path2.name} have different anchors.")
     if path1.columns != path2.columns:
-        raise RuntimeError(f"{path1} and {path2} have different columns.")
+        raise RuntimeError(f"{path1.name} and {path2.name} have different columns.")
 
     p1 = path1.positions()[-1]
     p2 = path2.positions()[0]
@@ -40,12 +56,15 @@ def merge_two_paths(path1: Path, path2: Path):
 
 
 if __name__ == "__main__":
-    args = sys.argv
-    arg_list = args[1:]
+    args = parse_args()
+    output = args.output
+    first_traj = args.traj_file_1
+    traj_list = args.traj_file_n
 
-    path1 = Path.load(arg_list[0])
-    for i in range(1, len(arg_list)):
-        path2 = Path.load(arg_list[i])
+    path1 = Path.load(first_traj)
+    for i in range(len(traj_list)):
+        path2 = Path.load(traj_list[i])
         path1 = merge_two_paths(path1, path2)
 
-    path1.save("./examples/res.traj")
+    path1.save(output)
+    print(f"Trajectory saved in {output}")
