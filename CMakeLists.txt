@@ -17,6 +17,7 @@ install(PROGRAMS
   scripts/record
   scripts/path_from_swaths
   scripts/planner
+  scripts/merge
   DESTINATION lib/${PROJECT_NAME}
 )
 
