@@ -11,6 +11,7 @@ class PathGenerator:
         self.swaths = None
         self.path = None
         self.polygon = None
+        self.origin = (0, 0, 0)
 
         self.robot = f2c.Robot(robot_width, operation_width)
         self.robot.setMinTurningRadius(min_radius)
@@ -28,8 +29,6 @@ class PathGenerator:
             swath = f2c.Swath(line_string)
             self.swaths.emplace_back(swath)
 
-        self.origin = (0, 0, 0)
-
     def create_swaths_from_csv(self, filename):
         points = []
         with open(filename, "r") as file:
@@ -43,19 +42,35 @@ class PathGenerator:
         with open(filename, "r") as file:
             data = json.load(file)
 
-        is_first_point = True
-
-        points = []
+        coords = []
         for feature in data["features"]:
-            if feature["geometry"]["type"] == "LineString":
-                coords = feature["geometry"]["coordinates"]
-                for lon, lat in coords:
-                    if is_first_point:
-                        self.origin = lon, lat, 0
-                        is_first_point = False
+            type = feature["geometry"]["type"]
+            geo_coords = feature["geometry"]["coordinates"]
+            if type in ("LineString", "MultiPoint"):
+                coords.extend(geo_coords)
+            elif type == "Point":
+                coords.append(geo_coords)
+            elif type == "MultiLineString":
+                for group in geo_coords:
+                    coords.extend(group)
 
-                    x, y, _ = pm.geodetic2enu(lat, lon, 0, self.origin[1], self.origin[0], 0)
-                    points.append((x, y))
+        is_first_point = True
+        points = []
+        for geo_point in coords:
+            if len(geo_point) == 3:
+                lon, lat, alt = geo_point
+            else:
+                lon, lat = geo_point
+                alt = 0.0
+
+            if is_first_point:
+                self.origin = lon, lat, alt
+                is_first_point = False
+
+            x, y, _ = pm.geodetic2enu(
+                lat, lon, alt, self.origin[1], self.origin[0], self.origin[2]
+            )
+            points.append((x, y))
         self.create_swaths_from_points(points)
 
     def path_planning(self):
@@ -70,9 +85,10 @@ class PathGenerator:
         self.path = path_planner.planPath(self.robot, self.swaths, turning)
 
         # fix: Add missing last point manually
-        last_state = f2c.PathState()
-        last_state.point = self.swaths.back().endPoint()
-        self.path.addState(last_state)
+        if self.swaths.size():
+            last_state = f2c.PathState()
+            last_state.point = self.swaths.back().endPoint()
+            self.path.addState(last_state)
 
         self.path = discretize_swaths(self.path, self.step_size + 0.01)
 
@@ -80,7 +96,7 @@ class PathGenerator:
         tiara_path = Path()
         tiara_path.columns = ["x", "y", "speed"]
 
-        tiara_path.anchor = [self.origin[1], self.origin[0], self.origin[2]]
+        tiara_path.anchor = self.origin[1], self.origin[0], self.origin[2]
 
         TURN = f2c.PathSectionType_TURN
         SWATH = f2c.PathSectionType_SWATH

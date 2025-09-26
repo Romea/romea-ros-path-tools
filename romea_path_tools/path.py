@@ -158,7 +158,7 @@ class Path:
         for feature in data['features']:
             if feature['id'] == 'origin':
                 coords = feature['geometry']['coordinates']
-                path.anchor = (coords[1], coords[0], coords[1])
+                path.anchor = coords[1], coords[0], coords[2]
 
             elif feature['id'] == 'sections':
                 coords = feature['geometry']['coordinates']
