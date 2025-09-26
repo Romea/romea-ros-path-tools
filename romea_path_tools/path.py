@@ -128,7 +128,7 @@ class Path:
     @staticmethod
     def from_csv(filename):
         """ Build a path from a CSV file containing 'x', 'y' and other columns
-        ('.wgs84.csv'). The column separator must be ','.
+        ('.csv'). The column separator must be ','.
         """
         file = open(filename, 'r')
         path = Path()
