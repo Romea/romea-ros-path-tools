@@ -10,7 +10,7 @@ import romea_path_tools.kml as kml
 
 
 class PathGenerator:
-    def __init__(self, robot_width, operation_width, min_radius):
+    def __init__(self, robot_width, operation_width, min_radius, start_point):
         self.cell = None
         self.swaths = None
         self.path = None
@@ -21,6 +21,7 @@ class PathGenerator:
         self.robot.setCruiseVel(1.0)
         # self.robot.linear_curv_change = 0.4  # 1/m^2
         self.step_size = 0.1  # m
+        self.start_point = start_point
 
     def load_kml(self, filename):
         self.polygon = kml.parse_polygon(filename)
@@ -43,7 +44,7 @@ class PathGenerator:
         swaths = bf.generateSwaths(angle, self.robot.getCovWidth(), self.cell)
 
         # self.swaths = f2c.RP_Snake().genSortedSwaths(swaths)
-        self.swaths = f2c.RP_Boustrophedon().genSortedSwaths(swaths, 0)
+        self.swaths = f2c.RP_Boustrophedon().genSortedSwaths(swaths, self.start_point)
         # self.swaths = f2c.RP_Spiral().genSortedSwaths(swaths)
 
     def path_planning(self):
@@ -116,11 +117,12 @@ class PathGenerator:
 @click.option("-r", "--min-radius", default=3.5, type=click.FLOAT)
 @click.option("-o", "--output", default="out.traj", type=click.Path(writable=True))
 @click.option("--robot-width", default=None, type=click.FLOAT)
-def main(kml_filename, operation_width, min_radius, output, robot_width):
+@click.option("-s", "--start-point", default=0)
+def main(kml_filename, operation_width, min_radius, output, robot_width, start_point):
     if robot_width is None:
         robot_width = operation_width
 
-    pg = PathGenerator(robot_width, operation_width, min_radius)
+    pg = PathGenerator(robot_width, operation_width, min_radius, start_point)
     pg.load_kml(kml_filename)
     pg.generate_swaths()
     pg.path_planning()
