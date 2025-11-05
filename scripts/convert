@@ -5,142 +5,180 @@ import os
 import sys
 import math
 import copy
+import numpy as np
+import numpy.typing as npt
 
 # local
 from romea_path_tools.path import Path
 
+
 def parse_args():
-  parser = argparse.ArgumentParser(
-      prog=os.path.basename(sys.argv[0]),
-      description='''\
-        Convert a path file to a new one with some transformations.
-        Is is possible to export the trajectory to a new format by using the -t option 
-        or by specifying the correct file extension. The known extensions are 
-          '.txt' (for old romea format for trajectories),
-          '.traj' (for the tiara format for trajectories),
-          '.csv' (for CSV points in east-north-up coordinates),
-          '.wgs84.csv' (for CSV points in WGS84 coordinates),
-          '.kml' (for the KML standard format),
-          '.geojson' (for the GeoJSON standard format).
-      ''',
-      allow_abbrev=True,
-  )
-  parser.add_argument(
-      '-a', '--anchor', type=float, nargs=3, default=None,
-      metavar=('lat', 'lon', 'alt'),
-      help='a new anchor (format: latitude longitude altitude)'
-  )
-  parser.add_argument(
-      '-o', '--offset', type=float, nargs=2, default=None,
-      metavar=('x', 'y'),
-      help='an (x, y) offset to apply to the points (format: x y)'
-  )
-  parser.add_argument(
-      '-r', '--rotation', type=float, default=None, metavar="angle",
-      help='apply a rotation to the points (in degrees)'
-  )
-  parser.add_argument(
-      '-t', '--type', type=str, default=None, metavar="type",
-      choices=['romea_v1', 'tiara', 'csv', 'kml', 'wgs84_csv', 'geojson'],
-      help='''\
+    parser = argparse.ArgumentParser(
+        prog=os.path.basename(sys.argv[0]),
+        description="""\
+            Convert a path file to a new one with some transformations.
+            Is is possible to export the trajectory to a new format by using the -t option 
+            or by specifying the correct file extension. The known extensions are 
+              '.txt' (for old romea format for trajectories),
+              '.traj' (for the tiara format for trajectories),
+              '.csv' (for CSV points in east-north-up coordinates),
+              '.wgs84.csv' (for CSV points in WGS84 coordinates),
+              '.kml' (for the KML standard format),
+              '.geojson' (for the GeoJSON standard format).
+        """,
+        allow_abbrev=True,
+    )
+    parser.add_argument(
+        "-a",
+        "--anchor",
+        type=float,
+        nargs=3,
+        default=None,
+        metavar=("lat", "lon", "alt"),
+        help="a new anchor (format: latitude longitude altitude)",
+    )
+    parser.add_argument(
+        "-o",
+        "--offset",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("x", "y"),
+        help="an (x, y) offset from the orientation of the first point (format: x y)",
+    )
+    parser.add_argument(
+        "-r",
+        "--rotation",
+        type=float,
+        default=None,
+        metavar="angle",
+        help="apply a rotation to the points (in degrees)",
+    )
+    parser.add_argument(
+        "-t",
+        "--type",
+        type=str,
+        default=None,
+        metavar="type",
+        choices=["romea_v1", "tiara", "csv", "kml", "wgs84_csv", "geojson"],
+        help="""\
         file format of the generated path 
         [romea_v1, tiara, csv, kml, wgs84_csv, geojson].
         If the format is not specified, the file extension is used.
-      '''
-  )
-  parser.add_argument('-f', '--force', action='store_true', help='override existing output file')
+      """,
+    )
+    parser.add_argument("-f", "--force", action="store_true", help="override existing output file")
 
-  parser.add_argument('path_in', type=str, help="path to a '.txt' or a '.traj' path file")
-  parser.add_argument('path_out', type=str, help='generated path file')
-  args = parser.parse_args()
-  return args
+    parser.add_argument("path_in", type=str, help="path to a '.txt' or a '.traj' path file")
+    parser.add_argument("path_out", type=str, help="generated path file")
+    args = parser.parse_args()
+    return args
 
 
 def create_points(path: Path, new_path: Path, offset: list, angle: float):
-  cos_angle = math.cos(angle)
-  sin_angle = math.sin(angle)
+    cos_angle = math.cos(angle)
+    sin_angle = math.sin(angle)
 
-  new_path.columns = path.columns
+    new_path.columns = path.columns
 
-  xi = path.columns.index('x')
-  yi = path.columns.index('y')
+    xi = path.columns.index("x")
+    yi = path.columns.index("y")
 
-  for point in path.points:
-    new_point = copy.copy(point)
-    new_point[xi] = offset[0] + point[xi] * cos_angle - point[yi] * sin_angle
-    new_point[yi] = offset[1] + point[xi] * sin_angle + point[yi] * cos_angle
-    new_path.points.append(new_point)
+    for point in path.points:
+        new_point = copy.copy(point)
+        new_point[xi] = offset[0] + point[xi] * cos_angle - point[yi] * sin_angle
+        new_point[yi] = offset[1] + point[xi] * sin_angle + point[yi] * cos_angle
+        new_path.points.append(new_point)
 
-  new_path.create_sections(path.section_indexes())
+    new_path.create_sections(path.section_indexes())
+
+
+def initial_path_direction(path: Path) -> npt.NDArray:
+    points = path.points
+    if len(points) < 2:
+        raise RuntimeError("Not enough points to compute an initial direction vector")
+    diff = np.array(points[1][:2]) - np.array(points[0][:2])
+    return diff / np.linalg.norm(diff)
+
+
+def rotate_from_dir(direction: npt.NDArray, vector: npt.NDArray) -> npt.NDArray:
+    perpendicular = np.array([-direction[1], direction[0]])
+    rotated_vector = (vector[0] * direction) + (vector[1] * perpendicular)
+    return rotated_vector
 
 
 if __name__ == "__main__":
-  args = parse_args()
+    args = parse_args()
 
-  if not args.force and os.path.exists(args.path_out):
-    print(f"[error] Failed to create file '{args.path_out}': file already exists", file=sys.stderr)
-    if input("Do you want to override it? [y/N] ") not in ['y', 'Y', 'o', 'O']:
-      exit(1)
+    if not args.force and os.path.exists(args.path_out):
+        print(
+            f"[error] Failed to create file '{args.path_out}': file already exists", file=sys.stderr
+        )
+        if input("Do you want to override it? [y/N] ") not in ["y", "Y", "o", "O"]:
+            exit(1)
 
-  path = Path.load(args.path_in)
-  new_path = Path()
+    path = Path.load(args.path_in)
+    new_path = Path()
 
-  offset = [0., 0.]
+    offset = [0.0, 0.0]
 
-  if args.rotation:
-    angle = args.rotation * math.pi / 180.
-  else:
-    angle = 0.
-
-  if args.offset:
-    offset = args.offset
-
-  if args.anchor:
-    new_path.anchor = args.anchor
-    anchor = path.anchor
-    new_anchor = new_path.anchor
-
-    print(f'current anchor: {anchor}')
-    print(f'new anchor: {new_anchor}')
-
-    e, n, u = enu.geodetic2enu(
-        anchor[0], anchor[1], anchor[2],
-        new_anchor[0], new_anchor[1], new_anchor[2])
-    offset[0] += e
-    offset[1] += n
-    print(f'offset: {offset}')
-
-  else:
-    new_path.anchor = path.anchor
-
-  create_points(path, new_path, offset, angle)
-  new_path.annotations = copy.copy(path.annotations)
-
-  if args.type:
-    if args.type == 'csv':
-      new_path.save_csv(args.path_out)
-    elif args.type == 'kml':
-      new_path.save_kml(args.path_out)
-    elif args.type == 'wgs84_csv':
-      new_path.save_wgs84_csv(args.path_out)
-    elif args.type == 'geojson':
-      new_path.save_geojson(args.path_out)
-    elif args.type == 'romea_v1':
-      print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
+    if args.rotation:
+        angle = args.rotation * math.pi / 180.0
     else:
-      new_path.save(args.path_out)
-  else:
-    if args.path_out.endswith('wgs84.csv'):
-      new_path.save_wgs84_csv(args.path_out)
-    elif args.path_out.endswith('.csv'):
-      new_path.save_csv(args.path_out)
-    elif args.path_out.endswith('.kml'):
-      new_path.save_kml(args.path_out)
-    elif args.path_out.endswith('.geojson'):
-      new_path.save_geojson(args.path_out)
-    elif args.path_out.endswith('.txt'):
-      print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
-    elif args.path_out.endswith('.traj'):
-      new_path.save(args.path_out)
+        angle = 0.0
+
+    if args.offset:
+        offset = args.offset
+        dir = initial_path_direction(path)
+        offset = rotate_from_dir(dir, offset)
+
+
+    if args.anchor:
+        new_path.anchor = args.anchor
+        anchor = path.anchor
+        new_anchor = new_path.anchor
+
+        print(f"current anchor: {anchor}")
+        print(f"new anchor: {new_anchor}")
+
+        e, n, u = enu.geodetic2enu(
+            anchor[0], anchor[1], anchor[2], new_anchor[0], new_anchor[1], new_anchor[2]
+        )
+        offset[0] += e
+        offset[1] += n
+        print(f"offset: {offset}")
+
     else:
-      print(f"[error] unknown file extension for '{args.path_out}'", file=sys.stderr)
+        new_path.anchor = path.anchor
+
+    create_points(path, new_path, offset, angle)
+    new_path.annotations = copy.copy(path.annotations)
+
+    if args.type:
+        if args.type == "csv":
+            new_path.save_csv(args.path_out)
+        elif args.type == "kml":
+            new_path.save_kml(args.path_out)
+        elif args.type == "wgs84_csv":
+            new_path.save_wgs84_csv(args.path_out)
+        elif args.type == "geojson":
+            new_path.save_geojson(args.path_out)
+        elif args.type == "romea_v1":
+            print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
+        else:
+            new_path.save(args.path_out)
+    else:
+        if args.path_out.endswith("wgs84.csv"):
+            new_path.save_wgs84_csv(args.path_out)
+        elif args.path_out.endswith(".csv"):
+            new_path.save_csv(args.path_out)
+        elif args.path_out.endswith(".kml"):
+            new_path.save_kml(args.path_out)
+        elif args.path_out.endswith(".geojson"):
+            new_path.save_geojson(args.path_out)
+        elif args.path_out.endswith(".txt"):
+            print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
+        elif args.path_out.endswith(".traj"):
+            new_path.save(args.path_out)
+        else:
+            print(f"[error] unknown file extension for '{args.path_out}'", file=sys.stderr)

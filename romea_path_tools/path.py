@@ -246,7 +246,7 @@ class Path:
 
         for p in self.points:
             lat, lon, alt = enu.enu2geodetic(p[x_index], p[y_index], 0, *self.anchor)
-            kml.add_point(lon, lat, alt)
+            kml_data.add_point(lon, lat, alt)
 
         kml_data.save(filename)
 
