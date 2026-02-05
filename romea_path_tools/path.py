@@ -25,7 +25,7 @@ class Path:
 
     @staticmethod
     def load(filename):
-        """ Read the file extension and build a path from the correct format """
+        """Read the file extension and build a path from the correct format"""
         if filename.endswith('.txt'):
             return Path.from_romea(filename)
         elif filename.endswith('.traj'):
@@ -72,7 +72,7 @@ class Path:
 
     @staticmethod
     def from_romea(filename):
-        """ Build a path from a file in the old romea format ('.txt') """
+        """Build a path from a file in the old romea format ('.txt')"""
         old_path = RomeaPath.load(filename)
         path = Path()
         path.name = os.path.basename(filename)
@@ -91,12 +91,13 @@ class Path:
 
     @staticmethod
     def from_kml(filename):
-        """ Build a path from a KML file that contains a linestring ('.kml') """
+        """Build a path from a KML file that contains a linestring ('.kml')"""
         linestring = kml.parse_polygon(filename)
         path = Path()
         path.name = os.path.basename(filename)
         orig = linestring.origin
         path.anchor = (orig[1], orig[0], orig[2])
+        path.columns = ['x', 'y']
         for point in linestring.points:
             path.append_point([point[0], point[1]])
 
@@ -104,7 +105,7 @@ class Path:
 
     @staticmethod
     def from_wgs84_csv(filename):
-        """ Build a path from a CSV file containing latitude, longitude and altitude
+        """Build a path from a CSV file containing latitude, longitude and altitude
         ('.wgs84.csv'). The column separator must be ','.
         """
         file = open(filename, 'r')
@@ -127,7 +128,7 @@ class Path:
 
     @staticmethod
     def from_csv(filename):
-        """ Build a path from a CSV file containing 'x', 'y' and other columns
+        """Build a path from a CSV file containing 'x', 'y' and other columns
         ('.csv'). The column separator must be ','.
         """
         file = open(filename, 'r')
@@ -145,7 +146,7 @@ class Path:
 
     @staticmethod
     def from_geojson(filename):
-        """ Build a path from a GeoJSON file that contains a Point (anchor)
+        """Build a path from a GeoJSON file that contains a Point (anchor)
         and a MultiLineString (traj) ('.geojson').
         Currently, extra columns are not supported
         """
@@ -172,16 +173,15 @@ class Path:
 
         return path
 
-
     def positions(self):
-        """ return an numpy array of (x, y) for each point """
+        """return an numpy array of (x, y) for each point"""
         pts = np.array(self.points)
         x_index = self.columns.index('x')
         y_index = self.columns.index('y')
         return pts[:, [x_index, y_index]]
 
     def section_indexes(self):
-        """ Return the list of point indexes that correspond to the begining of a new section """
+        """Return the list of point indexes that correspond to the begining of a new section"""
         indexes = []
         index = 0
         for section in self.sections:
@@ -190,7 +190,7 @@ class Path:
         return indexes
 
     def create_sections(self, indexes):
-        """ Fill the 'sections' attribute with the points of the path according 
+        """Fill the 'sections' attribute with the points of the path according
         to the section indexes.
         """
         if indexes and indexes[-1] != len(self.points):
@@ -200,7 +200,7 @@ class Path:
             self.sections.append(self.points[begin:end])
 
     def save(self, filename):
-        """ Save the in the JSON format used by romea_path """
+        """Save the in the JSON format used by romea_path"""
         data = {
             'version': '2',
             'origin': {
@@ -218,8 +218,58 @@ class Path:
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
 
+    def save_v4(self, filename):
+        data = {
+            'version': '4',
+            'file_type': 'mission_order',
+            'origin': {
+                'type': 'WGS84',
+                'coordinates': {
+                    'lat': self.anchor[1],
+                    'lon': self.anchor[0],
+                    'alt': self.anchor[2],
+                },
+            },
+        }
+
+        points = []
+        segment = {}
+        i = 0
+        next_work_zone = self.next_zone('work', 0)
+        new_segment = True
+        while i < len(self.points):
+            if next_work_zone and i >= next_work_zone[0]:
+                if segment:
+                    points.append(segment)
+                segment = {
+                    'segment_type': 'row_line',
+                    'columns': self.columns,
+                    'values': [self.points[i], self.points[next_work_zone[1]]],
+                }
+                points.append(segment)
+                new_segment = True
+                i = next_work_zone[1] + 1
+                next_work_zone = self.next_zone('work', i)
+            else:
+                if new_segment:
+                    segment = {
+                        'segment_type': 'turn_path',
+                        'columns': self.columns,
+                        'values': [],
+                    }
+                    new_segment = False
+                segment['values'].append(self.points[i])
+                i += 1
+
+        if not new_segment:
+            points.append(segment)
+        data['points'] = points
+
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=2)
+
     def save_csv(self, filename):
-        """ Save the path in CSV format. The point are expressed in 'x' and 'y' coordinates """
+        """Save the path in CSV format. The point are expressed in 'x' and 'y' coordinates"""
         with open(filename, 'w') as f:
             f.write(','.join(self.columns) + '\n')
 
@@ -227,7 +277,7 @@ class Path:
                 f.write(','.join(map(str, point)) + '\n')
 
     def save_wgs84_csv(self, filename):
-        """ Save the path in CSV format. The point are expressed in WGS84 coordinates """
+        """Save the path in CSV format. The point are expressed in WGS84 coordinates"""
         with open(filename, 'w') as f:
             f.write(f'latitude,longitude,altitude\n')
 
@@ -239,7 +289,7 @@ class Path:
                 f.write(f'{lat},{lon},{alt}\n')
 
     def save_kml(self, filename):
-        """ Save the path in KML format. """
+        """Save the path in KML format."""
         kml_data = kml.Kml()
         x_index = self.columns.index('x')
         y_index = self.columns.index('y')
@@ -251,7 +301,7 @@ class Path:
         kml_data.save(filename)
 
     def save_geojson(self, filename):
-        """ Save the path in GeoJSON format. """
+        """Save the path in GeoJSON format."""
         x_index = self.columns.index('x')
         y_index = self.columns.index('y')
 
@@ -277,7 +327,7 @@ class Path:
             gj.dump(features, f, indent=2)
 
     def extra_columns(self):
-        """ Return a dictionnary containing the columns that are not 'x' or 'y' and its values """
+        """Return a dictionnary containing the columns that are not 'x' or 'y' and its values"""
         indexes = []
         for i, key in enumerate(self.columns):
             if key not in ['x', 'y']:
@@ -292,18 +342,18 @@ class Path:
         return {'columns': columns, 'values': sections}
 
     def empty(self):
-        """ Return True if there is no points """
+        """Return True if there is no points"""
         return len(self.points) == 0
 
     def append_section(self, section):
-        """ Add a section at the end of the path 
+        """Add a section at the end of the path
         The points in this new section must respect the format of 'columns'
         """
         self.sections.append(section)
         self.points += section
 
     def append_point(self, point):
-        """ Add a point at the end of the last section of the path 
+        """Add a point at the end of the last section of the path
         The point must respect the format of 'columns'
         """
         self.points.append(point)
@@ -312,8 +362,31 @@ class Path:
         self.sections[-1].append(point)
 
     def append_annotation(self, type, value, point_index):
-        self.annotations.append({
+        """Add an annotation to the path
+        The annotations are ordered by point_index
+        """
+        new_annotation = {
             'type': type,
             'value': value,
             'point_index': point_index,
-        })
+        }
+        for i, annotation in enumerate(self.annotations):
+            if point_index < annotation['point_index']:
+                self.annotations.insert(i, new_annotation)
+                return
+        self.annotations.append(new_annotation)
+
+    def next_zone(self, value, index):
+        """Returns a tuple with the point_indices of the next annotations with types
+        'zone_enter' and 'zone_exit' and 'point_index' > i
+        """
+        next_enter = None
+        for annotation in self.annotations:
+            if annotation['point_index'] < index or annotation['value'] != value:
+                continue
+            if annotation['type'] == 'zone_enter':
+                next_enter = annotation['point_index']
+            if next_enter is not None and annotation['type'] == 'zone_exit':
+                return (next_enter, annotation['point_index'])
+
+        return ()

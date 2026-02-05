@@ -87,9 +87,7 @@ class PathGenerator:
                 self.origin = lon, lat, alt
                 is_first_point = False
 
-            x, y, _ = pm.geodetic2enu(
-                lat, lon, alt, self.origin[1], self.origin[0], self.origin[2]
-            )
+            x, y, _ = pm.geodetic2enu(lat, lon, alt, self.origin[1], self.origin[0], self.origin[2])
             points.append((x, y))
         self.create_swaths_from_points(points)
 
@@ -145,4 +143,4 @@ class PathGenerator:
 
     def export_path(self, filename):
         tiara_path = self.get_tiara_path()
-        tiara_path.save(filename)
+        tiara_path.save_v4(filename)
