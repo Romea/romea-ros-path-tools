@@ -17,7 +17,7 @@ class Path:
 
     def __init__(self):
         self.anchor = (0, 0, 0)
-        self.columns = ['x', 'y']
+        self.columns = None
         self.points = []
         self.sections = []
         self.annotations = []
@@ -43,13 +43,85 @@ class Path:
 
     @staticmethod
     def from_tiara(filename):
-        path = Path()
-        path.name = os.path.basename(filename)
-
         with open(filename, 'r') as f:
             data = json.load(f)
+        version = data['version']
 
+        if version == '2':
+            return Path.from_tiara_v2(data, filename)
+        elif version == '4':
+            return Path.from_tiara_v4(data, filename)
+        else:
+            raise RuntimeError(f"unsupported version for tiara input file '{filename}'")
+
+    @staticmethod
+    def from_tiara_v4(data, filename):
         origin = data['origin']
+
+        path = Path()
+        path.name = os.path.basename(filename)
+        if origin['type'] != 'WGS84':
+            raise ParseError(f"unknown origin type '{origin['type']}'; only 'WGS84' is accepted")
+        anchor_coord = origin['coordinates']
+        path.anchor = (anchor_coord['lon'], anchor_coord['lat'], anchor_coord['alt'])
+
+        if 'points' not in data:
+            raise ParseError("the element 'points' is required in a trajectory file")
+        else:
+            points = data['points']
+
+        for segment in points:
+            segment_type = segment['segment_type']
+            if not path.columns:
+                path.columns = [c for c in segment['columns'] if c != 'punctual']
+
+            if segment_type == 'row_path':
+                if segment['columns'][-1] == 'punctual':
+                    vals = [v[:-1] for v in segment['values']]
+                else:
+                    vals = segment['values']
+                path.points.extend(vals)
+
+            if segment_type == 'row_line':
+                path.append_annotation("zone_enter", "work", len(path.points))
+                ind_x = segment['columns'].index('x')
+                ind_y = segment['columns'].index('y')
+                step = 0.1
+
+                p1 = np.array([segment['values'][0][ind_x], segment['values'][0][ind_y]])
+                p2 = np.array([segment['values'][-1][ind_x], segment['values'][-1][ind_y]])
+
+                # distance along the segment
+                length = np.linalg.norm(p2 - p1)
+                n_steps = int(length / step)
+
+                coords = [p1 + (p2 - p1) * t for t in np.linspace(0, 1, n_steps + 1)]
+                vals = []
+                for c in coords:
+                    value = segment['values'][0].copy()
+                    value[ind_x] = c[0]
+                    value[ind_y] = c[1]
+                    vals.append(value)
+                path.points.extend(vals)
+                path.append_annotation("zone_exit", "work", len(path.points) - 1)
+
+            if segment_type == 'turn_path':
+                path.append_annotation("zone_enter", "uturn", len(path.points))
+                if segment['columns'][-1] == 'punctual':
+                    vals = [v[:-1] for v in segment['values']]
+                else:
+                    vals = segment['values']
+                path.points.extend(vals)
+                path.append_annotation("zone_exit", "uturn", len(path.points) - 1)
+
+        return path
+
+    @staticmethod
+    def from_tiara_v2(data, filename):
+        origin = data['origin']
+
+        path = Path()
+        path.name = os.path.basename(filename)
         if origin['type'] != 'WGS84':
             raise ParseError(f"unknown origin type '{origin['type']}'; only 'WGS84' is accepted")
         path.anchor = origin['coordinates']
