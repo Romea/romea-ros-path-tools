@@ -1,6 +1,7 @@
 import fields2cover as f2c
 import pymap3d as pm
 import json
+from enum import Enum
 
 from romea_path_tools.path_planning_utils import discretize_swaths
 from romea_path_tools.path import Path
@@ -17,6 +18,13 @@ order_algos = {
     "snake": f2c.RP_Snake,
     "spiral": f2c.RP_Spiral,
 }
+
+
+class CurveType(Enum):
+    DUBINS = "dubins"
+    DUBINS_CC = "dubins_cc"
+    REEDS_SHEPP = "reeds_shepp"
+    REEDS_SHEPP_HC = "reeds_sheep_hc"
 
 
 class PathGenerator:
@@ -91,7 +99,7 @@ class PathGenerator:
             points.append((x, y))
         self.create_swaths_from_points(points)
 
-    def route_planning(self, order_algo: str, variant: int=1):
+    def route_planning(self, order_algo: str, variant: int = 1):
         self.swaths = order_algos[order_algo]().genSortedSwaths(self.swaths, variant)
 
     def path_planning(self):
