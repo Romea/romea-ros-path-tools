@@ -5,9 +5,16 @@ import json
 from romea_path_tools.path_planning_utils import discretize_swaths
 from romea_path_tools.path import Path
 
+turning_bases = {
+    "Dubins": f2c.PP_DubinsCurves,
+    "DubinsCC": f2c.PP_DubinsCurvesCC,
+    "ReedsShepp": f2c.PP_ReedsSheppCurves,
+    "ReedsSheppHC": f2c.PP_ReedsSheppCurvesHC,
+}
+
 
 class PathGenerator:
-    def __init__(self, robot_width, operation_width, min_radius):
+    def __init__(self, robot_width, operation_width, min_radius, turning_type="ReedsSheppHC"):
         self.swaths = None
         self.path = None
         self.polygon = None
@@ -18,6 +25,10 @@ class PathGenerator:
         self.robot.setCruiseVel(1.0)
         self.robot.setMaxDiffCurv(0.4)  # 1/m²
         self.step_size = 0.1  # m
+
+        # instantiate turning algo depending of the value of turning_type
+        self.turning = turning_bases[turning_type]()
+        self.turning.discretization = self.step_size
 
     def create_swaths_from_points(self, points):
         self.swaths = f2c.Swaths()
@@ -76,13 +87,7 @@ class PathGenerator:
     def path_planning(self):
         path_planner = f2c.PP_PathPlanning()
 
-        # turning = f2c.PP_DubinsCurves()
-        turning = f2c.PP_DubinsCurvesCC()
-        # turning = f2c.PP_ReedsSheppCurves()
-        # turning = f2c.PP_ReedsSheppCurvesHC()
-
-        turning.discretization = self.step_size
-        self.path = path_planner.planPath(self.robot, self.swaths, turning)
+        self.path = path_planner.planPath(self.robot, self.swaths, self.turning)
 
         # fix: Add missing last point manually
         if self.swaths.size():

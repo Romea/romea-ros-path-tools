@@ -21,13 +21,13 @@ def main():
     args = parse_args()
     operation_width = 1.58
     # min_radius = 3.5
-    min_radius = 3.2
+    min_radius = 1.1
     robot_width = 1.0
 
     if operation_width < robot_width:
         robot_width = operation_width
 
-    pg = PathGenerator(robot_width, operation_width, min_radius)
+    pg = PathGenerator(robot_width, operation_width, min_radius, turning_type="DubinsCC")
 
     if args.input_path.endswith(".csv"):
         pg.create_swaths_from_csv(args.input_path)
