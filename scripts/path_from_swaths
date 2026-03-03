@@ -21,13 +21,16 @@ def main():
     args = parse_args()
     operation_width = 1.58
     # min_radius = 3.5
-    min_radius = 1.1
+    min_radius = 3.174  # 3.17 is correct
     robot_width = 1.0
+    turning_type = "ReedsSheppHC"
+    order_algo = "boustrophedon"
+    order_variant = 0
 
     if operation_width < robot_width:
         robot_width = operation_width
 
-    pg = PathGenerator(robot_width, operation_width, min_radius, turning_type="DubinsCC")
+    pg = PathGenerator(robot_width, operation_width, min_radius, turning_type=turning_type)
 
     if args.input_path.endswith(".csv"):
         pg.create_swaths_from_csv(args.input_path)
@@ -36,6 +39,7 @@ def main():
     else:
         raise ValueError("Unsupported file format. Please use .csv or .geojson files.")
 
+    pg.route_planning(order_algo, order_variant)
     pg.path_planning()
 
     print(f"nb swaths: {pg.swaths.size()}")

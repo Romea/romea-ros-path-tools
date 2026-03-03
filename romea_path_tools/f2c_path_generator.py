@@ -12,6 +12,12 @@ turning_bases = {
     "ReedsSheppHC": f2c.PP_ReedsSheppCurvesHC,
 }
 
+order_algos = {
+    "boustrophedon": f2c.RP_Boustrophedon,
+    "snake": f2c.RP_Snake,
+    "spiral": f2c.RP_Spiral,
+}
+
 
 class PathGenerator:
     def __init__(self, robot_width, operation_width, min_radius, turning_type="ReedsSheppHC"):
@@ -19,6 +25,7 @@ class PathGenerator:
         self.path = None
         self.polygon = None
         self.origin = (0, 0, 0)
+        self.operation_width = operation_width
 
         self.robot = f2c.Robot(robot_width, operation_width)
         self.robot.setMinTurningRadius(min_radius)
@@ -38,6 +45,8 @@ class PathGenerator:
                 f2c.Point(*b),
             )
             swath = f2c.Swath(line_string)
+            swath.setType(f2c.SwathType_MAINLAND)
+            swath.setWidth(self.operation_width)
             self.swaths.emplace_back(swath)
 
     def create_swaths_from_csv(self, filename):
@@ -83,6 +92,9 @@ class PathGenerator:
             )
             points.append((x, y))
         self.create_swaths_from_points(points)
+
+    def route_planning(self, order_algo: str, variant: int=1):
+        self.swaths = order_algos[order_algo]().genSortedSwaths(self.swaths, variant)
 
     def path_planning(self):
         path_planner = f2c.PP_PathPlanning()
