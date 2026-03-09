@@ -3,6 +3,7 @@
 import math
 import fields2cover as f2c
 import click
+import itertools
 
 from romea_path_tools.path_planning_utils import discretize_swaths
 from romea_path_tools.path import Path
@@ -32,7 +33,7 @@ class PathGenerator:
 
         self.cell = f2c.Cell(linear_ring)
 
-    def generate_swaths(self):
+    def generate_swaths(self, swath_count: int=0):
         bf = f2c.SG_BruteForce()
         # swaths = bf.generateSwaths(2.34, self.robot.op_width, self.cell)
         # swaths = bf.generateBestSwaths(f2c.OBJ_NSwath(), self.robot.op_width, self.cell)
@@ -46,6 +47,14 @@ class PathGenerator:
         # self.swaths = f2c.RP_Snake().genSortedSwaths(swaths)
         self.swaths = f2c.RP_Boustrophedon().genSortedSwaths(swaths, self.start_point)
         # self.swaths = f2c.RP_Spiral().genSortedSwaths(swaths)
+
+        # if specified, only keep the 'swath_count' first swaths
+        if swath_count > 0:
+            limited_swaths = f2c.Swaths()
+            count_limit = lambda t: t[0] < swath_count 
+            for _, swath in itertools.takewhile(count_limit, enumerate(self.swaths)):
+                limited_swaths.emplace_back(swath)
+            self.swaths = limited_swaths
 
     def path_planning(self):
         path_planner = f2c.PP_PathPlanning()
@@ -118,13 +127,14 @@ class PathGenerator:
 @click.option("-o", "--output", default="out.traj", type=click.Path(writable=True))
 @click.option("--robot-width", default=None, type=click.FLOAT)
 @click.option("-s", "--start-point", default=0)
-def main(kml_filename, operation_width, min_radius, output, robot_width, start_point):
+@click.option("-n", "--swath-count", default=0)
+def main(kml_filename, operation_width, min_radius, output, robot_width, start_point, swath_count):
     if robot_width is None:
         robot_width = operation_width
 
     pg = PathGenerator(robot_width, operation_width, min_radius, start_point)
     pg.load_kml(kml_filename)
-    pg.generate_swaths()
+    pg.generate_swaths(swath_count)
     pg.path_planning()
     # pg.visualize()
     pg.export_path(output)
