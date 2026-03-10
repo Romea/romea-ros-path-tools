@@ -39,7 +39,7 @@ def main():
     else:
         raise ValueError("Unsupported file format. Please use .csv or .geojson files.")
 
-    pg.route_planning(order_algo, order_variant)
+    # pg.route_planning(order_algo, order_variant)
     pg.path_planning()
 
     print(f"nb swaths: {pg.swaths.size()}")
