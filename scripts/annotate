@@ -26,6 +26,9 @@ def parse_args():
     parser.add_argument(
         "-a", "--area-file", type=str, help="path to the JSON file with area polygons"
     )
+    parser.add_argument(
+        "-c", "--clear", action='store_true', help="remove existing annotations of the given zone"
+    )
     return parser.parse_args()
 
 
@@ -44,6 +47,9 @@ class Annotate:
         self.fig, self.ax = plt.subplots()
         self.fig.set_size_inches(12, 8)
         self.fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
+
+        if args.clear:
+            self.clear_annotations(args.zone)
 
         if args.area_file:
             self.load_area_polygons(args.area_file)
@@ -115,6 +121,10 @@ class Annotate:
                 polygon = mpatches.Polygon(polygon_data, True, alpha=0.2, edgecolor="black")
                 self.polygons.append(polygon)
                 self.build_annotations(polygon)
+
+    def clear_annotations(self, name: str):
+        annotations = self.path.annotations
+        self.path.annotations = [a for a in annotations if a["value"] != name]
 
 
 if __name__ == "__main__":
