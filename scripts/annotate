@@ -80,7 +80,7 @@ class Annotate:
         previously_inside = False
 
         for index, point in enumerate(self.path.points):
-            is_inside = polygon.contains_point((point[0], point[1]))
+            is_inside = polygon.contains_point((point[0], point[1]), radius=0.01)
             if is_inside != previously_inside:
                 annotation = {
                     "type": "zone_enter" if is_inside else "zone_exit",

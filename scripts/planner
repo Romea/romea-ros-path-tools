@@ -26,7 +26,6 @@ class PathGenerator:
 
     def load_kml(self, filename):
         self.polygon = kml.parse_polygon(filename)
-        print(f"polygon: {self.polygon}")
         linear_ring = f2c.LinearRing()
         for point in self.polygon.points:
             linear_ring.addGeometry(f2c.Point(*point))
@@ -60,9 +59,9 @@ class PathGenerator:
         path_planner = f2c.PP_PathPlanning()
 
         # turning = f2c.PP_DubinsCurves()
-        turning = f2c.PP_DubinsCurvesCC()
+        # turning = f2c.PP_DubinsCurvesCC()
         # turning = f2c.PP_ReedsSheppCurves()
-        # turning = f2c.PP_ReedsSheppCurvesHC()
+        turning = f2c.PP_ReedsSheppCurvesHC()
 
         turning.discretization = self.step_size
         self.path = path_planner.planPath(self.robot, self.swaths, turning)
