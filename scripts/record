@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import signal
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point
@@ -12,7 +13,7 @@ class Recorder:
     def __init__(self):
         self.node = Node('recorder')
         self.node.declare_parameter('output', 'recorded.traj')
-        self.node.declare_parameter('minimal_distance_between_two_points', 0.2)
+        self.node.declare_parameter('minimal_distance_between_two_points', 0.1)
         self.node.declare_parameter('minimal_vehicle_speed_to_insert_point', 0.1)
         self.node.declare_parameter('anchor', [0., 0., 0.])
 
@@ -71,10 +72,12 @@ def main(args=None):
         rclpy.spin(recorder.node)
     except KeyboardInterrupt:
         pass
+    # avoid interupting save
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     print('node interrupted, saving trajectory...')
     recorder.save()
-    rclpy.shutdown()
+    # rclpy.shutdown()
 
 
 if __name__ == '__main__':
