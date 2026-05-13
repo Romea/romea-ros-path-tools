@@ -21,10 +21,10 @@ order_algos = {
 
 
 class CurveType(Enum):
-    DUBINS = "dubins"
-    DUBINS_CC = "dubins_cc"
-    REEDS_SHEPP = "reeds_shepp"
-    REEDS_SHEPP_HC = "reeds_sheep_hc"
+    DUBINS = "Dubins"
+    DUBINS_CC = "DubinsCC"
+    REEDS_SHEPP = "Reeds_Shepp"
+    REEDS_SHEPP_HC = "Reeds_SheppHC"
 
 
 class PathGenerator:
@@ -125,17 +125,21 @@ class PathGenerator:
         SWATH = f2c.PathSectionType_SWATH
         previous_dir = None
         previous_type = TURN
+        swath_start = None
 
         for i, state in enumerate(self.path.getStates()):
             if previous_dir != state.dir:
                 tiara_path.append_section([])
 
             if previous_type == SWATH and state.type == TURN:
+                tiara_path.row_zones.append((swath_start, i - 1))
+                swath_start = None
                 if i > 0:
                     tiara_path.append_annotation("zone_exit", "work", i - 1)
                 tiara_path.append_annotation("zone_enter", "uturn", i)
 
             if previous_type == TURN and state.type == SWATH:
+                swath_start = i
                 if i > 0:
                     tiara_path.append_annotation("zone_exit", "uturn", i - 1)
                 tiara_path.append_annotation("zone_enter", "work", i)
@@ -146,9 +150,22 @@ class PathGenerator:
             previous_dir = state.dir
             previous_type = state.type
 
-        tiara_path.append_annotation("zone_exit", "work", len(self.path.getStates()) - 1)
+        last_i = len(self.path.getStates()) - 1
+        tiara_path.append_annotation("zone_exit", "work", last_i)
+        if swath_start is not None:
+            tiara_path.row_zones.append((swath_start, last_i))
+
         return tiara_path
 
-    def export_path(self, filename):
+    def export_path(self, filename, format='v2'):
         tiara_path = self.get_tiara_path()
-        tiara_path.save_v4(filename)
+        if format == 'v4':
+            robot_config = {
+                'width': self.robot.getWidth(),
+                'tool_width': self.robot.getCovWidth(),
+                'min_curve_radius': self.robot.getMinTurningRadius(),
+                'max_diff_curve': self.robot.getMaxDiffCurv(),
+            }
+            tiara_path.save_v4(filename, curve_type=self.curve_type.value, robot_config=robot_config)
+        else:
+            tiara_path.save(filename)

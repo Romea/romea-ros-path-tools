@@ -4,6 +4,7 @@ import json
 import numpy as np
 from pymap3d import enu
 import geojson as gj
+import fields2cover as f2c
 
 from .romea_path import RomeaPath
 from . import kml
@@ -21,6 +22,7 @@ class Path:
         self.points = []
         self.sections = []
         self.annotations = []
+        self.row_zones = []
         self.name = None
 
     @staticmethod
@@ -80,10 +82,13 @@ class Path:
                     vals = [v[:-1] for v in segment['values']]
                 else:
                     vals = segment['values']
+                row_start = len(path.points)
                 path.points.extend(vals)
+                path.row_zones.append((row_start, len(path.points) - 1))
 
             if segment_type == 'row_line':
-                path.append_annotation("zone_enter", "work", len(path.points))
+                row_start = len(path.points)
+                path.append_annotation("zone_enter", "work", row_start)
                 ind_x = segment['columns'].index('x')
                 ind_y = segment['columns'].index('y')
                 step = 0.1
@@ -103,7 +108,16 @@ class Path:
                     value[ind_y] = c[1]
                     vals.append(value)
                 path.points.extend(vals)
+                path.row_zones.append((row_start, len(path.points) - 1))
                 path.append_annotation("zone_exit", "work", len(path.points) - 1)
+
+            if segment_type == 'turn_segment':
+                path.append_annotation("zone_enter", "uturn", len(path.points))
+                ind_x = segment['columns'].index('x')
+                ind_y = segment['columns'].index('y')
+                for v in segment['values']:
+                    path.append_point([v[ind_x], v[ind_y]])
+                path.append_annotation("zone_exit", "uturn", len(path.points) - 1)
 
             if segment_type == 'turn_path':
                 path.append_annotation("zone_enter", "uturn", len(path.points))
@@ -111,7 +125,20 @@ class Path:
                     vals = [v[:-1] for v in segment['values']]
                 else:
                     vals = segment['values']
+
+                ind_x = segment['columns'].index('x')
+                ind_y = segment['columns'].index('y')
+
+                points = np.array(vals)[:, [ind_x, ind_y]]
+                sections_indices = []
+                for i, (prec, curr, next) in enumerate(zip(points[:-2], points[1:-1], points[2:])):
+                    if not path.same_direction(prec, curr, next):
+                        sections_indices.append(i + 1)
+
+                n_points = len(path.points)
+                sections_indices = [i + n_points for i in sections_indices]
                 path.points.extend(vals)
+                path.create_sections(sections_indices)
                 path.append_annotation("zone_exit", "uturn", len(path.points) - 1)
 
         return path
@@ -290,7 +317,13 @@ class Path:
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
 
-    def save_v4(self, filename):
+    def save_v4(self, filename, curve_type=None, include_turn_geometry=False, robot_config=None):
+        if not self.row_zones:
+            raise ValueError(
+                "Path has no row_zones; save_v4 requires the path to have been built "
+                "with swath structure (e.g. via get_tiara_path() or loaded from a v4 file)"
+            )
+
         data = {
             'version': '4',
             'file_type': 'mission_order',
@@ -303,40 +336,48 @@ class Path:
                 },
             },
         }
+        if robot_config:
+            data['robot'] = robot_config
 
-        points = []
-        segment = {}
-        i = 0
-        next_work_zone = self.next_zone('work', 0)
-        new_segment = True
-        while i < len(self.points):
-            if next_work_zone and i >= next_work_zone[0]:
-                if segment:
-                    points.append(segment)
-                segment = {
-                    'segment_type': 'row_line',
-                    'columns': self.columns,
-                    'values': [self.points[i], self.points[next_work_zone[1]]],
-                }
-                points.append(segment)
-                new_segment = True
-                i = next_work_zone[1] + 1
-                next_work_zone = self.next_zone('work', i)
-            else:
-                if new_segment:
-                    segment = {
+        x_idx = self.columns.index('x')
+        y_idx = self.columns.index('y')
+        segments = []
+        prev_end = -1
+
+        for row_start, row_end in sorted(self.row_zones, key=lambda z: z[0]):
+            turn_start = prev_end + 1
+            turn_end = row_start - 1
+            if turn_start <= turn_end:
+                if include_turn_geometry:
+                    segments.append({
                         'segment_type': 'turn_path',
                         'columns': self.columns,
-                        'values': [],
+                        'values': self.points[turn_start:turn_end + 1],
+                    })
+                else:
+                    seg = {
+                        'segment_type': 'turn_segment',
+                        'columns': ['x', 'y'],
+                        'values': [
+                            [self.points[turn_start][x_idx], self.points[turn_start][y_idx]],
+                            [self.points[turn_end][x_idx],   self.points[turn_end][y_idx]],
+                        ],
                     }
-                    new_segment = False
-                segment['values'].append(self.points[i])
-                i += 1
+                    if curve_type:
+                        seg['turn_type'] = curve_type
+                    segments.append(seg)
 
-        if not new_segment:
-            points.append(segment)
-        data['points'] = points
+            segments.append({
+                'segment_type': 'row_line',
+                'columns': ['x', 'y'],
+                'values': [
+                    [self.points[row_start][x_idx], self.points[row_start][y_idx]],
+                    [self.points[row_end][x_idx],   self.points[row_end][y_idx]],
+                ],
+            })
+            prev_end = row_end
 
+        data['points'] = segments
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
 
@@ -447,6 +488,10 @@ class Path:
                 self.annotations.insert(i, new_annotation)
                 return
         self.annotations.append(new_annotation)
+
+    @staticmethod
+    def same_direction(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> bool:
+        return np.dot(p2 - p1, p3 - p2) > 0
 
     def next_zone(self, value, index):
         """Returns a tuple with the point_indices of the next annotations with types

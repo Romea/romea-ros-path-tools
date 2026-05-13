@@ -14,6 +14,12 @@ def parse_args():
         "input_path", type=str, help="input CSV or geojson file containing the swaths"
     )
     parser.add_argument("path", type=str, help="output path file")
+    parser.add_argument(
+        "--format",
+        choices=["v2", "v4"],
+        default="v2",
+        help="output trajectory format (default: v2)",
+    )
     return parser.parse_args()
 
 
@@ -44,9 +50,11 @@ def main():
     pg.path_planning()
 
     print(f"nb swaths: {pg.swaths.size()}")
-    print(f"nb generated points: {pg.path.size()}")
     print(f"WGS84 origin: {pg.origin}")
-    pg.export_path(args.path)
+
+    pg.path_planning()
+    print(f"nb generated points: {pg.path.size()}")
+    pg.export_path(args.path, format=args.format)
 
 
 if __name__ == "__main__":
