@@ -21,9 +21,10 @@ def main():
     args = parse_args()
     operation_width = 2.9
     # min_radius = 3.5
-    min_radius = 3.13
+    min_radius = 2.
     robot_width = 1.0
-    turning_type = "ReedsSheppHC"
+    # turning_type = "ReedsSheppHC"
+    turning_type = "DubinsCC"
     order_algo = "boustrophedon"
     order_variant = 0
 

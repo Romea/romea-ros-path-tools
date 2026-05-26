@@ -59,9 +59,9 @@ class PathGenerator:
         path_planner = f2c.PP_PathPlanning()
 
         # turning = f2c.PP_DubinsCurves()
-        # turning = f2c.PP_DubinsCurvesCC()
+        turning = f2c.PP_DubinsCurvesCC()
         # turning = f2c.PP_ReedsSheppCurves()
-        turning = f2c.PP_ReedsSheppCurvesHC()
+        # turning = f2c.PP_ReedsSheppCurvesHC()
 
         turning.discretization = self.step_size
         self.path = path_planner.planPath(self.robot, self.swaths, turning)
