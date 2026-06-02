@@ -1,6 +1,7 @@
 import operator
 import os
 import json
+import warnings
 import numpy as np
 from pymap3d import enu
 import geojson as gj
@@ -65,7 +66,7 @@ class Path:
         if origin['type'] != 'WGS84':
             raise ParseError(f"unknown origin type '{origin['type']}'; only 'WGS84' is accepted")
         anchor_coord = origin['coordinates']
-        path.anchor = (anchor_coord['lon'], anchor_coord['lat'], anchor_coord['alt'])
+        path.anchor = (anchor_coord['lat'], anchor_coord['lon'], anchor_coord['alt'])
 
         if 'points' not in data:
             raise ParseError("the element 'points' is required in a trajectory file")
@@ -74,8 +75,14 @@ class Path:
 
         for segment in points:
             segment_type = segment['segment_type']
+            seg_cols = [c for c in segment['columns'] if c != 'punctual']
             if not path.columns:
-                path.columns = [c for c in segment['columns'] if c != 'punctual']
+                path.columns = seg_cols
+            elif seg_cols != path.columns:
+                raise ParseError(
+                    f"segment '{segment['segment_type']}' has columns {seg_cols} but "
+                    f"earlier segments used {path.columns}; mixed columns are not supported"
+                )
 
             if segment_type == 'row_path':
                 if segment['columns'][-1] == 'punctual':
@@ -83,6 +90,9 @@ class Path:
                 else:
                     vals = segment['values']
                 row_start = len(path.points)
+                if not path.sections:
+                    path.sections.append([])
+                path.sections[-1].extend(vals)
                 path.points.extend(vals)
                 path.row_zones.append((row_start, len(path.points) - 1))
 
@@ -96,7 +106,6 @@ class Path:
                 p1 = np.array([segment['values'][0][ind_x], segment['values'][0][ind_y]])
                 p2 = np.array([segment['values'][-1][ind_x], segment['values'][-1][ind_y]])
 
-                # distance along the segment
                 length = np.linalg.norm(p2 - p1)
                 n_steps = int(length / step)
 
@@ -107,17 +116,18 @@ class Path:
                     value[ind_x] = c[0]
                     value[ind_y] = c[1]
                     vals.append(value)
+                if not path.sections:
+                    path.sections.append([])
+                path.sections[-1].extend(vals)
                 path.points.extend(vals)
                 path.row_zones.append((row_start, len(path.points) - 1))
                 path.append_annotation("zone_exit", "work", len(path.points) - 1)
 
             if segment_type == 'turn_segment':
-                path.append_annotation("zone_enter", "uturn", len(path.points))
-                ind_x = segment['columns'].index('x')
-                ind_y = segment['columns'].index('y')
-                for v in segment['values']:
-                    path.append_point([v[ind_x], v[ind_y]])
-                path.append_annotation("zone_exit", "uturn", len(path.points) - 1)
+                raise ParseError(
+                    "cannot import a v4 trajectory containing 'turn_segment' entries: "
+                    "turn geometry must be pre-computed (use 'turn_path' instead)"
+                )
 
             if segment_type == 'turn_path':
                 path.append_annotation("zone_enter", "uturn", len(path.points))
@@ -299,7 +309,7 @@ class Path:
             self.sections.append(self.points[begin:end])
 
     def save(self, filename):
-        """Save the in the JSON format used by romea_path"""
+        """Save the path in the JSON format used by romea_path"""
         data = {
             'version': '2',
             'origin': {
@@ -318,20 +328,15 @@ class Path:
             json.dump(data, f, indent=2)
 
     def save_v4(self, filename, curve_type=None, include_turn_geometry=False, robot_config=None):
-        if not self.row_zones:
-            raise ValueError(
-                "Path has no row_zones; save_v4 requires the path to have been built "
-                "with swath structure (e.g. via get_tiara_path() or loaded from a v4 file)"
-            )
-
+        """Save the path in version 4 of the JSON format used by romea_path"""
         data = {
             'version': '4',
             'file_type': 'mission_order',
             'origin': {
                 'type': 'WGS84',
                 'coordinates': {
-                    'lat': self.anchor[1],
-                    'lon': self.anchor[0],
+                    'lat': self.anchor[0],
+                    'lon': self.anchor[1],
                     'alt': self.anchor[2],
                 },
             },
@@ -339,47 +344,111 @@ class Path:
         if robot_config:
             data['robot'] = robot_config
 
-        x_idx = self.columns.index('x')
-        y_idx = self.columns.index('y')
-        segments = []
-        prev_end = -1
+        if not self.row_zones:
+            data['points'] = [self._turn_path_segment(0, len(self.points) - 1)]
+        else:
+            x_idx = self.columns.index('x')
+            y_idx = self.columns.index('y')
+            segments = []
+            prev_end = -1
+            prev_row_end_xy = None
 
-        for row_start, row_end in sorted(self.row_zones, key=lambda z: z[0]):
-            turn_start = prev_end + 1
-            turn_end = row_start - 1
-            if turn_start <= turn_end:
-                if include_turn_geometry:
-                    segments.append({
-                        'segment_type': 'turn_path',
-                        'columns': self.columns,
-                        'values': self.points[turn_start:turn_end + 1],
-                    })
+            for zone in sorted(self.row_zones, key=lambda z: z[0]):
+                row_start = zone[0]
+                row_end = zone[1]
+                if len(zone) >= 4:
+                    row_start_xy = list(zone[2])
+                    row_end_xy = list(zone[3])
                 else:
-                    seg = {
-                        'segment_type': 'turn_segment',
+                    row_start_xy = [self.points[row_start][x_idx], self.points[row_start][y_idx]]
+                    row_end_xy = [self.points[row_end][x_idx], self.points[row_end][y_idx]]
+
+                turn_start = prev_end + 1
+                turn_end = row_start - 1
+                if turn_start <= turn_end:
+                    if include_turn_geometry:
+                        segments.append(self._turn_path_segment(turn_start, turn_end))
+                    else:
+                        t_start_xy = (
+                            prev_row_end_xy
+                            if prev_row_end_xy is not None
+                            else [self.points[turn_start][x_idx], self.points[turn_start][y_idx]]
+                        )
+                        seg = {
+                            'segment_type': 'turn_segment',
+                            'columns': ['x', 'y'],
+                            'values': [t_start_xy, row_start_xy],
+                        }
+                        if curve_type:
+                            seg['turn_type'] = curve_type
+                        segments.append(seg)
+
+                segments.append(
+                    {
+                        'segment_type': 'row_line',
                         'columns': ['x', 'y'],
-                        'values': [
-                            [self.points[turn_start][x_idx], self.points[turn_start][y_idx]],
-                            [self.points[turn_end][x_idx],   self.points[turn_end][y_idx]],
-                        ],
+                        'values': [row_start_xy, row_end_xy],
                     }
-                    if curve_type:
-                        seg['turn_type'] = curve_type
-                    segments.append(seg)
+                )
+                prev_end = row_end
+                prev_row_end_xy = row_end_xy
 
-            segments.append({
-                'segment_type': 'row_line',
-                'columns': ['x', 'y'],
-                'values': [
-                    [self.points[row_start][x_idx], self.points[row_start][y_idx]],
-                    [self.points[row_end][x_idx],   self.points[row_end][y_idx]],
-                ],
-            })
-            prev_end = row_end
+            data['points'] = segments
 
-        data['points'] = segments
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
+
+    def _turn_path_segment(self, start, end):
+        if 'speed' in self.columns or len(self.sections) <= 1:
+            return {
+                'segment_type': 'turn_path',
+                'columns': self.columns,
+                'values': self.points[start : end + 1],
+            }
+
+        sec_starts = self.section_indexes()
+        inner_transitions = [s for s in sec_starts if start < s <= end]
+
+        if not inner_transitions:
+            return {
+                'segment_type': 'turn_path',
+                'columns': self.columns,
+                'values': self.points[start : end + 1],
+            }
+
+        cols = list(self.columns) + ['speed']
+        boundaries = [start] + inner_transitions + [end + 1]
+        start_sec = sum(1 for s in sec_starts if s <= start) - 1
+        values = []
+        for i, (seg_s, seg_e) in enumerate(zip(boundaries[:-1], boundaries[1:])):
+            speed = 1.0 if (start_sec + i) % 2 == 0 else -1.0
+            for pt in self.points[seg_s:seg_e]:
+                values.append(list(pt) + [speed])
+
+        warnings.warn(
+            "Path has multiple sections (direction changes) but no speed column. "
+            "Arbitrary speed values (+1.0 / -1.0) have been added.",
+            UserWarning,
+            stacklevel=3,
+        )
+        return {
+            'segment_type': 'turn_path',
+            'columns': cols,
+            'values': values,
+        }
+
+    def infer_row_zones_from_annotations(self):
+        """Populate row_zones from zone_enter/exit work annotations (heuristic)"""
+        self.row_zones = []
+        enter_idx = None
+        for ann in self.annotations:
+            if ann['value'] != 'work':
+                continue
+            if ann['type'] == 'zone_enter':
+                enter_idx = ann['point_index']
+            elif ann['type'] == 'zone_exit' and enter_idx is not None:
+                self.row_zones.append((enter_idx, ann['point_index']))
+                enter_idx = None
 
     def save_csv(self, filename):
         """Save the path in CSV format. The point are expressed in 'x' and 'y' coordinates"""

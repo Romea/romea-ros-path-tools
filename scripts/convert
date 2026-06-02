@@ -68,6 +68,11 @@ def parse_args():
       """,
     )
     parser.add_argument("-f", "--force", action="store_true", help="override existing output file")
+    parser.add_argument(
+        "--infer-rows",
+        action="store_true",
+        help="when converting to tiara_v4, try to infer row boundaries from work zone annotations",
+    )
 
     parser.add_argument("path_in", type=str, help="path to a '.txt' or a '.traj' path file")
     parser.add_argument("path_out", type=str, help="generated path file")
@@ -91,6 +96,7 @@ def create_points(path: Path, new_path: Path, offset: list, angle: float):
         new_path.points.append(new_point)
 
     new_path.create_sections(path.section_indexes())
+    new_path.row_zones = [(z[0], z[1]) for z in path.row_zones]
 
 
 def initial_path_direction(path: Path) -> npt.NDArray:
@@ -165,7 +171,9 @@ if __name__ == "__main__":
         elif args.type == "romea_v1":
             print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
         elif args.type == "tiara_v4":
-            new_path.save_v4(args.path_out)
+            if not new_path.row_zones and args.infer_rows:
+                new_path.infer_row_zones_from_annotations()
+            new_path.save_v4(args.path_out, include_turn_geometry=True)
         else:
             new_path.save(args.path_out)
     else:
