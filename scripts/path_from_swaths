@@ -1,36 +1,35 @@
 #!/usr/bin/env python3
-import os
-import sys
-import argparse
+import click
 from romea_path_tools.f2c_path_generator import PathGenerator, CurveType
 
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        prog=os.path.basename(sys.argv[0]),
-        description="Generate a path from a CSV file containing swaths",
-    )
-    parser.add_argument(
-        "input_path", type=str, help="input CSV or geojson file containing the swaths"
-    )
-    parser.add_argument("path", type=str, help="output path file")
-    parser.add_argument(
-        "--format",
-        choices=["v2", "v4"],
-        default="v2",
-        help="output trajectory format (default: v2)",
-    )
-    return parser.parse_args()
+CURVE_TYPE_NAMES = [ct.name for ct in CurveType]
 
 
-def main():
-    args = parse_args()
+@click.command()
+@click.argument("input_path", type=click.Path(exists=True))
+@click.argument("path", type=click.Path())
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["v2", "v4"]),
+    default="v2",
+    show_default=True,
+    help="output trajectory format",
+)
+@click.option(
+    "--curve-type",
+    type=click.Choice(CURVE_TYPE_NAMES),
+    default="DubinsCC",
+    show_default=True,
+    help="turning curve type",
+)
+def main(input_path, path, fmt, turning_type):
+    """Generate a path from a CSV or GeoJSON file containing swaths."""
     operation_width = 2.9
     # min_radius = 3.5
     min_radius = 2.0
     robot_width = 1.0
     # turning_type = "ReedsSheppHC"
-    turning_type = "DubinsCC"
     order_algo = "boustrophedon"
     order_variant = 0
 
@@ -39,10 +38,10 @@ def main():
 
     pg = PathGenerator(robot_width, operation_width, min_radius, turning_type=turning_type)
 
-    if args.input_path.endswith(".csv"):
-        pg.create_swaths_from_csv(args.input_path)
-    elif args.input_path.endswith(".geojson"):
-        pg.create_swaths_from_geojson(args.input_path)
+    if input_path.endswith(".csv"):
+        pg.create_swaths_from_csv(input_path)
+    elif input_path.endswith(".geojson"):
+        pg.create_swaths_from_geojson(input_path)
     else:
         raise ValueError("Unsupported file format. Please use .csv or .geojson files.")
 
@@ -54,7 +53,7 @@ def main():
 
     pg.path_planning()
     print(f"nb generated points: {pg.path.size()}")
-    pg.export_path(args.path, format=args.format)
+    pg.export_path(path, format=fmt)
 
 
 if __name__ == "__main__":

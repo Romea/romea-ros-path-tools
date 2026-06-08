@@ -15,7 +15,7 @@ class Recorder:
         self.node.declare_parameter('output', 'recorded.traj')
         self.node.declare_parameter('minimal_distance_between_two_points', 0.1)
         self.node.declare_parameter('minimal_vehicle_speed_to_insert_point', 0.1)
-        self.node.declare_parameter('anchor', [0., 0., 0.])
+        self.node.declare_parameter('anchor', [0.0, 0.0, 0.0])
 
         self.filename = self.node.get_parameter('output')
         min_dist = self.node.get_parameter('minimal_distance_between_two_points')
@@ -37,7 +37,7 @@ class Recorder:
         self.path.columns = ['x', 'y', 'speed']
 
         self.previous_pos = Point()
-        self.previous_speed = 0.
+        self.previous_speed = 0.0
         self.min_dist_squared = min_dist * min_dist
 
     def odom_callback(self, msg: Odometry):

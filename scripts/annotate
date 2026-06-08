@@ -100,7 +100,7 @@ class Annotate:
             self.area_points[:, 0], self.area_points[:, 1], ".-", markersize=10
         )
 
-        self.ax.add_collection(PatchCollection(self.polygons, alpha=.2, edgecolor='black'))
+        self.ax.add_collection(PatchCollection(self.polygons, alpha=0.2, edgecolor='black'))
 
         self.ax.legend(self.handles.values(), self.handles.keys())
 
