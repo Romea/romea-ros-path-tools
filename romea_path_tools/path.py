@@ -1,5 +1,6 @@
 import operator
 import os
+import math
 import json
 import warnings
 import numpy as np
@@ -23,6 +24,7 @@ class Path:
         self.points = []
         self.sections = []
         self.annotations = []
+        self.punctuals = []
         self.row_zones = []
         self.name = None
 
@@ -73,46 +75,53 @@ class Path:
         else:
             points = data['points']
 
+        path.columns = []
+        for segment in points:
+            for col in segment['columns']:
+                if col != 'punctual' and col not in path.columns:
+                    path.columns.append(col)
+
+        all_seg_cols = [[c for c in seg['columns'] if c != 'punctual'] for seg in points]
+        if any(cols != all_seg_cols[0] for cols in all_seg_cols[1:]):
+            warnings.warn(
+                "segments have mixed columns; missing values filled with NaN and will be omitted on export",
+                UserWarning, stacklevel=2,
+            )
+
         for segment in points:
             segment_type = segment['segment_type']
-            seg_cols = [c for c in segment['columns'] if c != 'punctual']
-            if not path.columns:
-                path.columns = seg_cols
-            elif seg_cols != path.columns:
-                raise ParseError(
-                    f"segment '{segment['segment_type']}' has columns {seg_cols} but "
-                    f"earlier segments used {path.columns}; mixed columns are not supported"
-                )
+            vals, puncts = Path._remap_segment_values(segment, path.columns)
 
             if segment_type == 'row_path':
-                if segment['columns'][-1] == 'punctual':
-                    vals = [v[:-1] for v in segment['values']]
-                else:
-                    vals = segment['values']
                 row_start = len(path.points)
                 if not path.sections:
                     path.sections.append([])
                 path.sections[-1].extend(vals)
                 path.points.extend(vals)
+                path.punctuals.extend(puncts)
                 path.row_zones.append((row_start, len(path.points) - 1))
 
             if segment_type == 'row_line':
                 row_start = len(path.points)
                 path.append_annotation("zone_enter", "work", row_start)
-                ind_x = segment['columns'].index('x')
-                ind_y = segment['columns'].index('y')
+                ind_x = path.columns.index('x')
+                ind_y = path.columns.index('y')
                 step = 0.1
 
-                p1 = np.array([segment['values'][0][ind_x], segment['values'][0][ind_y]])
-                p2 = np.array([segment['values'][-1][ind_x], segment['values'][-1][ind_y]])
+                p1 = np.array([vals[0][ind_x], vals[0][ind_y]])
+                p2 = np.array([vals[-1][ind_x], vals[-1][ind_y]])
 
                 length = np.linalg.norm(p2 - p1)
                 n_steps = int(length / step)
 
+                first_value = vals[0]
                 coords = [p1 + (p2 - p1) * t for t in np.linspace(0, 1, n_steps + 1)]
+                interp_puncts = [{} for _ in coords]
+                interp_puncts[0] = puncts[0]
+                interp_puncts[-1] = puncts[-1]
                 vals = []
                 for c in coords:
-                    value = segment['values'][0].copy()
+                    value = first_value.copy()
                     value[ind_x] = c[0]
                     value[ind_y] = c[1]
                     vals.append(value)
@@ -120,6 +129,7 @@ class Path:
                     path.sections.append([])
                 path.sections[-1].extend(vals)
                 path.points.extend(vals)
+                path.punctuals.extend(interp_puncts)
                 path.row_zones.append((row_start, len(path.points) - 1))
                 path.append_annotation("zone_exit", "work", len(path.points) - 1)
 
@@ -131,27 +141,46 @@ class Path:
 
             if segment_type == 'turn_path':
                 path.append_annotation("zone_enter", "uturn", len(path.points))
-                if segment['columns'][-1] == 'punctual':
-                    vals = [v[:-1] for v in segment['values']]
-                else:
-                    vals = segment['values']
 
-                ind_x = segment['columns'].index('x')
-                ind_y = segment['columns'].index('y')
-
-                points = np.array(vals)[:, [ind_x, ind_y]]
                 sections_indices = []
-                for i, (prec, curr, next) in enumerate(zip(points[:-2], points[1:-1], points[2:])):
-                    if not path.same_direction(prec, curr, next):
-                        sections_indices.append(i + 1)
+                if 'speed' in path.columns:
+                    ind_speed = path.columns.index('speed')
+                    for i in range(1, len(vals)):
+                        prev, curr = vals[i - 1][ind_speed], vals[i][ind_speed]
+                        if not (math.isnan(prev) or math.isnan(curr)) and prev * curr < 0:
+                            sections_indices.append(i)
 
                 n_points = len(path.points)
-                sections_indices = [i + n_points for i in sections_indices]
                 path.points.extend(vals)
-                path.create_sections(sections_indices)
+                path.punctuals.extend(puncts)
+                if sections_indices:
+                    path.create_sections([n_points] + [n_points + i for i in sections_indices])
+                else:
+                    if not path.sections:
+                        path.sections.append([])
+                    path.sections[-1].extend(vals)
                 path.append_annotation("zone_exit", "uturn", len(path.points) - 1)
 
         return path
+
+    @staticmethod
+    def _remap_segment_values(segment, unified_columns):
+        """Remap the values of a v4 segment to the unified column order.
+        Columns absent from the segment are filled with NaN.
+        Return (values, punctuals) where punctuals contains one dict per point
+        ({} when the segment has no 'punctual' column).
+        """
+        seg_cols = segment['columns']
+        indices = {c: i for i, c in enumerate(seg_cols) if c != 'punctual'}
+        punct_index = seg_cols.index('punctual') if 'punctual' in seg_cols else None
+        values = [
+            [row[indices[col]] if col in indices else float('nan') for col in unified_columns]
+            for row in segment['values']
+        ]
+        punctuals = [
+            row[punct_index] if punct_index is not None else {} for row in segment['values']
+        ]
+        return values, punctuals
 
     @staticmethod
     def from_tiara_v2(data, filename):
@@ -308,8 +337,37 @@ class Path:
         for begin, end in zip(indexes[:-1], indexes[1:]):
             self.sections.append(self.points[begin:end])
 
+    @staticmethod
+    def _is_nan(value):
+        return isinstance(value, float) and math.isnan(value)
+
+    @staticmethod
+    def _drop_nan_columns(columns, values):
+        """Return (columns, values) without the columns containing at least one NaN"""
+        keep = [i for i in range(len(columns)) if not any(Path._is_nan(row[i]) for row in values)]
+        if len(keep) == len(columns):
+            return columns, values
+        return [columns[i] for i in keep], [[row[i] for i in keep] for row in values]
+
+    def _nan_free_points(self):
+        """Return (columns, points) of the whole path without the columns that
+        contain NaN values (columns missing in some segments of the source file),
+        warning about what was dropped.
+        """
+        columns, values = Path._drop_nan_columns(self.columns, self.points)
+        if len(columns) != len(self.columns):
+            dropped = [c for c in self.columns if c not in columns]
+            warnings.warn(
+                f"columns {dropped} are missing in some segments (NaN values) "
+                "and were dropped from the export",
+                UserWarning,
+                stacklevel=3,
+            )
+        return columns, values
+
     def save(self, filename):
         """Save the path in the JSON format used by romea_path"""
+        columns, values = self._nan_free_points()
         data = {
             'version': '2',
             'origin': {
@@ -317,8 +375,8 @@ class Path:
                 'coordinates': self.anchor,
             },
             'points': {
-                'columns': self.columns,
-                'values': self.points,
+                'columns': columns,
+                'values': values,
             },
             'sections': self.section_indexes(),
             'annotations': self.annotations,
@@ -398,32 +456,57 @@ class Path:
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
 
+    def _point_punctuals(self, start, end):
+        """Return the punctual dicts of the point range, or None if they are all empty"""
+        puncts = [
+            self.punctuals[i] if i < len(self.punctuals) else {} for i in range(start, end + 1)
+        ]
+        return puncts if any(puncts) else None
+
+    @staticmethod
+    def _append_punctual(segment, punctuals):
+        """Append a 'punctual' column (kept last for readability) to a v4 segment"""
+        if punctuals:
+            segment['columns'] = list(segment['columns']) + ['punctual']
+            segment['values'] = [
+                list(row) + [punct] for row, punct in zip(segment['values'], punctuals)
+            ]
+        return segment
+
     def _turn_path_segment(self, start, end):
-        if 'speed' in self.columns or len(self.sections) <= 1:
-            return {
-                'segment_type': 'turn_path',
-                'columns': self.columns,
-                'values': self.points[start : end + 1],
-            }
+        columns, values = Path._drop_nan_columns(self.columns, self.points[start : end + 1])
+        punctuals = self._point_punctuals(start, end)
+        if 'speed' in columns or len(self.sections) <= 1:
+            return Path._append_punctual(
+                {
+                    'segment_type': 'turn_path',
+                    'columns': columns,
+                    'values': values,
+                },
+                punctuals,
+            )
 
         sec_starts = self.section_indexes()
         inner_transitions = [s for s in sec_starts if start < s <= end]
 
         if not inner_transitions:
-            return {
-                'segment_type': 'turn_path',
-                'columns': self.columns,
-                'values': self.points[start : end + 1],
-            }
+            return Path._append_punctual(
+                {
+                    'segment_type': 'turn_path',
+                    'columns': columns,
+                    'values': values,
+                },
+                punctuals,
+            )
 
-        cols = list(self.columns) + ['speed']
+        cols = list(columns) + ['speed']
         boundaries = [start] + inner_transitions + [end + 1]
         start_sec = sum(1 for s in sec_starts if s <= start) - 1
-        values = []
+        speed_values = []
         for i, (seg_s, seg_e) in enumerate(zip(boundaries[:-1], boundaries[1:])):
             speed = 1.0 if (start_sec + i) % 2 == 0 else -1.0
-            for pt in self.points[seg_s:seg_e]:
-                values.append(list(pt) + [speed])
+            for pt in values[seg_s - start : seg_e - start]:
+                speed_values.append(list(pt) + [speed])
 
         warnings.warn(
             "Path has multiple sections (direction changes) but no speed column. "
@@ -431,11 +514,14 @@ class Path:
             UserWarning,
             stacklevel=3,
         )
-        return {
-            'segment_type': 'turn_path',
-            'columns': cols,
-            'values': values,
-        }
+        return Path._append_punctual(
+            {
+                'segment_type': 'turn_path',
+                'columns': cols,
+                'values': speed_values,
+            },
+            punctuals,
+        )
 
     def infer_row_zones_from_annotations(self):
         """Populate row_zones from zone_enter/exit work annotations (heuristic)"""
@@ -452,10 +538,11 @@ class Path:
 
     def save_csv(self, filename):
         """Save the path in CSV format. The point are expressed in 'x' and 'y' coordinates"""
+        columns, values = self._nan_free_points()
         with open(filename, 'w') as f:
-            f.write(','.join(self.columns) + '\n')
+            f.write(','.join(columns) + '\n')
 
-            for point in self.points:
+            for point in values:
                 f.write(','.join(map(str, point)) + '\n')
 
     def save_wgs84_csv(self, filename):
@@ -510,10 +597,14 @@ class Path:
 
     def extra_columns(self):
         """Return a dictionnary containing the columns that are not 'x' or 'y' and its values"""
+        nan_free_columns, _ = self._nan_free_points()
         indexes = []
         for i, key in enumerate(self.columns):
-            if key not in ['x', 'y']:
+            if key not in ['x', 'y'] and key in nan_free_columns:
                 indexes.append(i)
+
+        if not indexes:
+            return {'columns': [], 'values': []}
 
         columns_select = operator.itemgetter(*indexes)
         columns = columns_select(self.columns)
@@ -557,10 +648,6 @@ class Path:
                 self.annotations.insert(i, new_annotation)
                 return
         self.annotations.append(new_annotation)
-
-    @staticmethod
-    def same_direction(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> bool:
-        return np.dot(p2 - p1, p3 - p2) > 0
 
     def next_zone(self, value, index):
         """Returns a tuple with the point_indices of the next annotations with types

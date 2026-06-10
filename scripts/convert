@@ -28,6 +28,7 @@ def create_points(path: Path, new_path: Path, offset: list, angle: float):
         new_path.points.append(new_point)
 
     new_path.create_sections(path.section_indexes())
+    new_path.punctuals = copy.deepcopy(path.punctuals)
     new_path.row_zones = [(z[0], z[1]) for z in path.row_zones]
 
 
