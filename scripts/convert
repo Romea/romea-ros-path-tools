@@ -10,6 +10,10 @@ import numpy.typing as npt
 
 # local
 from romea_path_tools.path import Path
+from romea_path_tools.f2c_path_generator import CurveType
+
+CURVE_TYPE_NAMES = [ct.value for ct in CurveType]
+SUPPORTED_FORMATS = ["romea_v1", "tiara_v2", "tiara_v4", "csv", "kml", "wgs84_csv", "geojson"]
 
 
 def create_points(path: Path, new_path: Path, offset: list, angle: float):
@@ -30,6 +34,8 @@ def create_points(path: Path, new_path: Path, offset: list, angle: float):
     new_path.create_sections(path.section_indexes())
     new_path.punctuals = copy.deepcopy(path.punctuals)
     new_path.row_zones = [(z[0], z[1]) for z in path.row_zones]
+    new_path.turn_zones = list(path.turn_zones)
+    new_path.robot = path.robot
 
 
 def initial_path_direction(path: Path) -> npt.NDArray:
@@ -76,8 +82,7 @@ def rotate_from_dir(direction: npt.NDArray, vector: npt.NDArray) -> npt.NDArray:
     help="apply a rotation to the points (in degrees)",
 )
 @click.option(
-    "-t",
-    "--type",
+    "--format",
     "fmt",
     default=None,
     metavar="TYPE",
@@ -86,14 +91,24 @@ def rotate_from_dir(direction: npt.NDArray, vector: npt.NDArray) -> npt.NDArray:
 )
 @click.option("-f", "--force", is_flag=True, help="override existing output file")
 @click.option(
-    "--infer-rows",
-    is_flag=True,
-    help="when converting to tiara_v4, try to infer row boundaries from work zone annotations",
+    "-i",
+    "--infer",
+    type=click.Choice(["none", "all", "rows", "turns"]),
+    default="all",
+    help="Used only when converting to tiara_v4. Will try to use annotations to create row_lines and \
+            turn_segments of type [turn-type].",
 )
-def main(path_in, path_out, anchor, offset, rotation, fmt, force, infer_rows):
+@click.option(
+    "-t",
+    "--turn-type",
+    type=click.Choice(CURVE_TYPE_NAMES),
+    default="DubinsCC",
+    help="turn type for tiara_v4. If not specified, turns will be list of points.",
+)
+def main(path_in, path_out, anchor, offset, rotation, fmt, force, infer, turn_type):
     """Convert a path file to a new one with some transformations.
 
-    Known extensions: .txt (romea), .traj (tiara), .csv, .wgs84.csv, .kml, .geojson.
+    Known extensions: .txt (romea), .traj (tiara_v2, tiara_v4), .csv, .wgs84.csv, .kml, .geojson.
     """
     if not force and os.path.exists(path_out):
         print(f"[error] Failed to create file '{path_out}': file already exists", file=sys.stderr)
@@ -153,9 +168,14 @@ def main(path_in, path_out, anchor, offset, rotation, fmt, force, infer_rows):
         elif fmt == "romea_v1":
             print("[error] output format 'romea_v1' is not supported", file=sys.stderr)
         elif fmt == "tiara_v4":
-            if not new_path.row_zones and infer_rows:
+            if not new_path.row_zones and infer in ["all", "rows"]:
                 new_path.infer_row_zones_from_annotations()
-            new_path.save_v4(path_out, include_turn_geometry=True)
+            use_compact_turns = infer in ["all", "turns"]
+            new_path.save_v4(
+                path_out,
+                curve_type=turn_type if use_compact_turns else None,
+                include_turn_geometry=not use_compact_turns,
+            )
         else:
             new_path.save(path_out)
     else:
