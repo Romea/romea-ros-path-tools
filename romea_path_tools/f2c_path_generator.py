@@ -157,7 +157,7 @@ class PathGenerator:
 
         return tiara_path
 
-    def export_path(self, filename, format='v2'):
+    def export_path(self, filename, format='v2', include_turn_geometry=None):
         tiara_path = self.get_tiara_path()
         if format == 'v4':
             robot_config = {
@@ -166,6 +166,11 @@ class PathGenerator:
                 'min_curve_radius': self.robot.getMinTurningRadius(),
                 'max_diff_curve': self.robot.getMaxDiffCurv(),
             }
-            tiara_path.save_v4(filename, curve_type=self.curve_type.value, robot_config=robot_config)
+            tiara_path.save_v4(
+                filename,
+                curve_type=self.curve_type.value,
+                robot_config=robot_config,
+                include_turn_geometry=include_turn_geometry,
+            )
         else:
             tiara_path.save(filename)

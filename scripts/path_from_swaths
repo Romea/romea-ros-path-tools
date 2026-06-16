@@ -2,12 +2,12 @@
 import click
 from romea_path_tools.f2c_path_generator import PathGenerator, CurveType
 
-CURVE_TYPE_NAMES = [ct.name for ct in CurveType]
+CURVE_TYPE_NAMES = [ct.value for ct in CurveType]
 
 
 @click.command()
-@click.argument("input_path", type=click.Path(exists=True))
-@click.argument("path", type=click.Path())
+@click.argument("path_in", type=click.Path(exists=True))
+@click.argument("path_out", type=click.Path())
 @click.option(
     "--format",
     "fmt",
@@ -38,10 +38,10 @@ def main(input_path, path, fmt, turning_type):
 
     pg = PathGenerator(robot_width, operation_width, min_radius, turning_type=turning_type)
 
-    if input_path.endswith(".csv"):
-        pg.create_swaths_from_csv(input_path)
-    elif input_path.endswith(".geojson"):
-        pg.create_swaths_from_geojson(input_path)
+    if path_in.endswith(".csv"):
+        pg.create_swaths_from_csv(path_in)
+    elif path_in.endswith(".geojson"):
+        pg.create_swaths_from_geojson(path_in)
     else:
         raise ValueError("Unsupported file format. Please use .csv or .geojson files.")
 
@@ -53,7 +53,7 @@ def main(input_path, path, fmt, turning_type):
 
     pg.path_planning()
     print(f"nb generated points: {pg.path.size()}")
-    pg.export_path(path, format=fmt)
+    pg.export_path(path_out, format=fmt)
 
 
 if __name__ == "__main__":
