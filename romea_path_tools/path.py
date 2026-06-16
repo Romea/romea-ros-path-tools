@@ -18,6 +18,13 @@ class ParseError(RuntimeError):
 
 class Path:
 
+    _TURN_PLANNERS = {
+        'Dubins':        f2c.PP_DubinsCurves,
+        'DubinsCC':      f2c.PP_DubinsCurvesCC,
+        'Reeds_Shepp':   f2c.PP_ReedsSheppCurves,
+        'Reeds_SheppHC': f2c.PP_ReedsSheppCurvesHC,
+    }
+
     def __init__(self):
         self.anchor = (0, 0, 0)
         self.columns = None
@@ -26,6 +33,8 @@ class Path:
         self.annotations = []
         self.punctuals = []
         self.row_zones = []
+        self.turn_zones = []
+        self.robot = None
         self.name = None
 
     @staticmethod
@@ -69,26 +78,28 @@ class Path:
             raise ParseError(f"unknown origin type '{origin['type']}'; only 'WGS84' is accepted")
         anchor_coord = origin['coordinates']
         path.anchor = (anchor_coord['lat'], anchor_coord['lon'], anchor_coord['alt'])
+        path.robot = data.get('robot')
 
         if 'points' not in data:
             raise ParseError("the element 'points' is required in a trajectory file")
         else:
-            points = data['points']
+            segments = data['points']
 
         path.columns = []
-        for segment in points:
+        for segment in segments:
             for col in segment['columns']:
                 if col != 'punctual' and col not in path.columns:
                     path.columns.append(col)
 
-        all_seg_cols = [[c for c in seg['columns'] if c != 'punctual'] for seg in points]
+        all_seg_cols = [[c for c in seg['columns'] if c != 'punctual'] for seg in segments]
         if any(cols != all_seg_cols[0] for cols in all_seg_cols[1:]):
             warnings.warn(
                 "segments have mixed columns; missing values filled with NaN and will be omitted on export",
-                UserWarning, stacklevel=2,
+                UserWarning,
+                stacklevel=2,
             )
 
-        for segment in points:
+        for i, segment in enumerate(segments):
             segment_type = segment['segment_type']
             vals, puncts = Path._remap_segment_values(segment, path.columns)
 
@@ -134,10 +145,33 @@ class Path:
                 path.append_annotation("zone_exit", "work", len(path.points) - 1)
 
             if segment_type == 'turn_segment':
-                raise ParseError(
-                    "cannot import a v4 trajectory containing 'turn_segment' entries: "
-                    "turn geometry must be pre-computed (use 'turn_path' instead)"
+                if not path.robot:
+                    raise ParseError(
+                        "cannot import a 'turn_segment' without a 'robot' block in the file"
+                    )
+                robot = Path._make_f2c_robot(path.robot)
+                start_angle = Path._adjacent_row_angle(segments, i, 'prev')
+                end_angle = Path._adjacent_row_angle(segments, i, 'next')
+                turn_type = segment.get('turn_type')
+                turn_vals, turn_puncts, dir_breaks = Path._compute_turn_geometry(
+                    segment, robot, start_angle, end_angle, path.columns
                 )
+
+                turn_start = len(path.points)
+                path.append_annotation("zone_enter", "uturn", turn_start)
+
+                n_points = len(path.points)
+                path.points.extend(turn_vals)
+                path.punctuals.extend(turn_puncts)
+                if dir_breaks:
+                    path.create_sections([n_points] + [n_points + k for k in dir_breaks])
+                else:
+                    if not path.sections:
+                        path.sections.append([])
+                    path.sections[-1].extend(turn_vals)
+
+                path.append_annotation("zone_exit", "uturn", len(path.points) - 1)
+                path.turn_zones.append((turn_start, len(path.points) - 1, turn_type))
 
             if segment_type == 'turn_path':
                 path.append_annotation("zone_enter", "uturn", len(path.points))
@@ -181,6 +215,94 @@ class Path:
             row[punct_index] if punct_index is not None else {} for row in segment['values']
         ]
         return values, punctuals
+
+    @staticmethod
+    def _make_f2c_robot(robot_config):
+        robot = f2c.Robot(robot_config.get('width', 1.0), robot_config.get('tool_width', 1.0))
+        robot.setMinTurningRadius(robot_config.get('min_curve_radius', 2.5))
+        if 'max_diff_curve' in robot_config:
+            robot.setMaxDiffCurv(robot_config['max_diff_curve'])
+        robot.setCruiseVel(1.0)
+        return robot
+
+    @staticmethod
+    def _adjacent_row_angle(segments, turn_idx, direction):
+        """Return the heading of the row_line/row_path adjacent to segments[turn_idx].
+
+        direction='prev': scan backward, return the heading of the preceding row.
+        direction='next': scan forward, return the heading of the following row.
+        Raises ParseError if no adjacent row segment is found (malformed file).
+        """
+        step = -1 if direction == 'prev' else 1
+        for j in range(turn_idx + step, -1 if step < 0 else len(segments), step):
+            seg = segments[j]
+            if seg['segment_type'] in ('row_line', 'row_path'):
+                cols = seg['columns']
+                xi, yi = cols.index('x'), cols.index('y')
+                p1, p2 = seg['values'][0], seg['values'][-1]
+                return math.atan2(p2[yi] - p1[yi], p2[xi] - p1[xi])
+        raise ParseError(
+            f"turn_segment at index {turn_idx} has no adjacent row segment "
+            f"({'before' if direction == 'prev' else 'after'} it); "
+            "a turn_segment must always be between two row segments"
+        )
+
+    @staticmethod
+    def _compute_turn_geometry(segment, robot, start_angle, end_angle, unified_columns):
+        """Call the F2C path planner for a turn_segment and return
+        (vals, punctuals, dir_break_indices).
+
+        dir_break_indices lists the indices in vals where the robot reverses direction,
+        which the caller uses to split sections.
+        """
+        turn_type = segment.get('turn_type')
+        if turn_type is None:
+            raise ParseError("turn_segment is missing the required 'turn_type' field")
+        if turn_type not in Path._TURN_PLANNERS:
+            raise ParseError(
+                f"unknown turn_type '{turn_type}'; "
+                f"expected one of: {', '.join(Path._TURN_PLANNERS)}"
+            )
+        planner = Path._TURN_PLANNERS[turn_type]()
+
+        seg_cols = segment['columns']
+        xi, yi = seg_cols.index('x'), seg_cols.index('y')
+        si = seg_cols.index('speed') if 'speed' in seg_cols else None
+        raw = segment['values']
+        speed = abs(raw[0][si]) if si is not None else 1.0
+        robot.setCruiseVel(speed)
+
+        start_pt = f2c.Point(raw[0][xi], raw[0][yi])
+        end_pt = f2c.Point(raw[-1][xi], raw[-1][yi])
+        f2c_path = planner.createTurn(robot, start_pt, start_angle, end_pt, end_angle)
+
+        x_col = unified_columns.index('x')
+        y_col = unified_columns.index('y')
+        spd_col = unified_columns.index('speed') if 'speed' in unified_columns else None
+
+        vals = []
+        dir_break_indices = []
+        prev_dir = None
+        for state in f2c_path.getStates():
+            if prev_dir is not None and state.dir != prev_dir:
+                dir_break_indices.append(len(vals))
+            prev_dir = state.dir
+            row = [float('nan')] * len(unified_columns)
+            row[x_col] = state.point.getX()
+            row[y_col] = state.point.getY()
+            if spd_col is not None:
+                row[spd_col] = state.velocity * state.dir
+            vals.append(row)
+
+        punctuals = [{} for _ in vals]
+        return vals, punctuals, dir_break_indices
+
+    def _find_turn_zone(self, start_idx):
+        """Return the turn_zone tuple whose start index matches start_idx, or None."""
+        for tz in self.turn_zones:
+            if tz[0] == start_idx:
+                return tz
+        return None
 
     @staticmethod
     def from_tiara_v2(data, filename):
@@ -385,8 +507,10 @@ class Path:
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
 
-    def save_v4(self, filename, curve_type=None, include_turn_geometry=False, robot_config=None):
+    def save_v4(self, filename, curve_type=None, include_turn_geometry=None, robot_config=None):
         """Save the path in version 4 of the JSON format used by romea_path"""
+        if robot_config is None:
+            robot_config = self.robot
         data = {
             'version': '4',
             'file_type': 'mission_order',
@@ -437,15 +561,18 @@ class Path:
                             'columns': ['x', 'y'],
                             'values': [t_start_xy, row_start_xy],
                         }
-                        if curve_type:
+                        turn_zone = self._find_turn_zone(turn_start)
+                        if turn_zone is not None:
+                            seg['turn_type'] = turn_zone[2]
+                        elif curve_type:
                             seg['turn_type'] = curve_type
                         segments.append(seg)
 
                 segments.append(
                     {
                         'segment_type': 'row_line',
-                        'columns': ['x', 'y'],
-                        'values': [row_start_xy, row_end_xy],
+                        'columns': ['x', 'y', 'working_zone'],
+                        'values': [row_start_xy + [1], row_end_xy + [1]],
                     }
                 )
                 prev_end = row_end
