@@ -1,17 +1,9 @@
 import fields2cover as f2c
 import pymap3d as pm
 import json
-from enum import Enum
 
 from romea_path_tools.path_planning_utils import discretize_swaths
-from romea_path_tools.path import Path
-
-turning_bases = {
-    "Dubins": f2c.PP_DubinsCurves,
-    "DubinsCC": f2c.PP_DubinsCurvesCC,
-    "ReedsShepp": f2c.PP_ReedsSheppCurves,
-    "ReedsSheppHC": f2c.PP_ReedsSheppCurvesHC,
-}
+from romea_path_tools.path import Path, TurnPlanner
 
 order_algos = {
     "boustrophedon": f2c.RP_Boustrophedon,
@@ -20,15 +12,8 @@ order_algos = {
 }
 
 
-class CurveType(Enum):
-    DUBINS = "Dubins"
-    DUBINS_CC = "DubinsCC"
-    REEDS_SHEPP = "Reeds_Shepp"
-    REEDS_SHEPP_HC = "Reeds_SheppHC"
-
-
 class PathGenerator:
-    def __init__(self, robot_width, operation_width, min_radius, turning_type="ReedsSheppHC"):
+    def __init__(self, robot_width, operation_width, min_radius, turning_type=TurnPlanner.Reeds_SheppHC):
         self.swaths = None
         self.path = None
         self.polygon = None
@@ -41,8 +26,8 @@ class PathGenerator:
         self.robot.setMaxDiffCurv(0.4)  # 1/m²
         self.step_size = 0.1  # m
 
-        # instantiate turning algo depending of the value of turning_type
-        self.turning = turning_bases[turning_type]()
+        self.turning_type = turning_type
+        self.turning = turning_type.value()
         self.turning.discretization = self.step_size
 
     def create_swaths_from_points(self, points):
@@ -168,7 +153,7 @@ class PathGenerator:
             }
             tiara_path.save_v4(
                 filename,
-                curve_type=self.curve_type.value,
+                turning_type=self.turning_type,
                 robot_config=robot_config,
                 include_turn_geometry=include_turn_geometry,
             )

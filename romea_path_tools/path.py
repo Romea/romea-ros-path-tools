@@ -3,6 +3,7 @@ import os
 import math
 import json
 import warnings
+from enum import Enum
 import numpy as np
 from pymap3d import enu
 import geojson as gj
@@ -16,14 +17,14 @@ class ParseError(RuntimeError):
     pass
 
 
-class Path:
+class TurnPlanner(Enum):
+    Dubins = f2c.PP_DubinsCurves
+    DubinsCC = f2c.PP_DubinsCurvesCC
+    Reeds_Shepp = f2c.PP_ReedsSheppCurves
+    Reeds_SheppHC = f2c.PP_ReedsSheppCurvesHC
 
-    _TURN_PLANNERS = {
-        'Dubins':        f2c.PP_DubinsCurves,
-        'DubinsCC':      f2c.PP_DubinsCurvesCC,
-        'Reeds_Shepp':   f2c.PP_ReedsSheppCurves,
-        'Reeds_SheppHC': f2c.PP_ReedsSheppCurvesHC,
-    }
+
+class Path:
 
     def __init__(self):
         self.anchor = (0, 0, 0)
@@ -90,14 +91,6 @@ class Path:
             for col in segment['columns']:
                 if col != 'punctual' and col not in path.columns:
                     path.columns.append(col)
-
-        all_seg_cols = [[c for c in seg['columns'] if c != 'punctual'] for seg in segments]
-        if any(cols != all_seg_cols[0] for cols in all_seg_cols[1:]):
-            warnings.warn(
-                "segments have mixed columns; missing values filled with NaN and will be omitted on export",
-                UserWarning,
-                stacklevel=2,
-            )
 
         for i, segment in enumerate(segments):
             segment_type = segment['segment_type']
@@ -258,12 +251,13 @@ class Path:
         turn_type = segment.get('turn_type')
         if turn_type is None:
             raise ParseError("turn_segment is missing the required 'turn_type' field")
-        if turn_type not in Path._TURN_PLANNERS:
+        try:
+            planner = TurnPlanner[turn_type].value()
+        except KeyError:
             raise ParseError(
                 f"unknown turn_type '{turn_type}'; "
-                f"expected one of: {', '.join(Path._TURN_PLANNERS)}"
+                f"expected one of: {', '.join(p.name for p in TurnPlanner)}"
             )
-        planner = Path._TURN_PLANNERS[turn_type]()
 
         seg_cols = segment['columns']
         xi, yi = seg_cols.index('x'), seg_cols.index('y')
@@ -507,7 +501,7 @@ class Path:
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
 
-    def save_v4(self, filename, curve_type=None, include_turn_geometry=None, robot_config=None):
+    def save_v4(self, filename, turning_type=None, include_turn_geometry=None, robot_config=None):
         """Save the path in version 4 of the JSON format used by romea_path"""
         if robot_config is None:
             robot_config = self.robot
@@ -564,8 +558,8 @@ class Path:
                         turn_zone = self._find_turn_zone(turn_start)
                         if turn_zone is not None:
                             seg['turn_type'] = turn_zone[2]
-                        elif curve_type:
-                            seg['turn_type'] = curve_type
+                        elif turning_type:
+                            seg['turn_type'] = turning_type.name
                         segments.append(seg)
 
                 segments.append(

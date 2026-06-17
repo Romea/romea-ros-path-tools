@@ -9,10 +9,9 @@ import numpy as np
 import numpy.typing as npt
 
 # local
-from romea_path_tools.path import Path
-from romea_path_tools.f2c_path_generator import CurveType
+from romea_path_tools.path import Path, TurnPlanner
 
-CURVE_TYPE_NAMES = [ct.value for ct in CurveType]
+CURVE_TYPE_NAMES = [t.name for t in TurnPlanner]
 SUPPORTED_FORMATS = ["romea_v1", "tiara_v2", "tiara_v4", "csv", "kml", "wgs84_csv", "geojson"]
 
 
@@ -173,7 +172,7 @@ def main(path_in, path_out, anchor, offset, rotation, fmt, force, infer, turn_ty
             use_compact_turns = infer in ["all", "turns"]
             new_path.save_v4(
                 path_out,
-                curve_type=turn_type if use_compact_turns else None,
+                turning_type=TurnPlanner[turn_type] if use_compact_turns else None,
                 include_turn_geometry=not use_compact_turns,
             )
         else:
