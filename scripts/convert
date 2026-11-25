@@ -85,7 +85,7 @@ def rotate_from_dir(direction: npt.NDArray, vector: npt.NDArray) -> npt.NDArray:
     "fmt",
     default=None,
     metavar="TYPE",
-    type=click.Choice(["romea_v1", "tiara_v2", "tiara_v4", "csv", "kml", "wgs84_csv", "geojson"]),
+    type=click.Choice(SUPPORTED_FORMATS),
     help="file format of the generated path. If not specified, the file extension is used.",
 )
 @click.option("-f", "--force", is_flag=True, help="override existing output file")
